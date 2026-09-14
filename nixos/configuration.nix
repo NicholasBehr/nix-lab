@@ -53,20 +53,14 @@
   # TODO: Configure your system-wide user settings (groups, etc), add more users as needed.
   users.users = {
     behrn = {
-      # TODO: You can set an initial password for your user.
-      # If you do, you can skip setting a root password by passing '--no-root-passwd' to nixos-install.
-      # Be sure to change it (using passwd) after rebooting!
-      initialPassword = "correcthorsebatterystaple";
       isNormalUser = true;
-      openssh.authorizedKeys.keys = [
-        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFiZnT6Yr2UhuX9cOgjWHAve+t0hJYIhz6Bby+dJsVf8"
-      ];
+      hashedPasswordFile = config.sops.secrets.behrn-password.path;
+      openssh.authorizedKeys.keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFiZnT6Yr2UhuX9cOgjWHAve+t0hJYIhz6Bby+dJsVf8"];
       extraGroups = ["wheel"];
     };
   };
 
-  # This setups a SSH server. Very important if you're setting up a headless system.
-  # Feel free to remove if you don't need it.
+  # SSH
   services.openssh = {
     enable = true;
     settings = {
@@ -80,6 +74,12 @@
 
   # Required for booting a ZFS root pool.
   networking.hostId = "1bfa673a";
+
+  sops = {
+    defaultSopsFile = ../secrets/secrets.yaml;
+    age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+    secrets.behrn-password.neededForUsers = true;
+  };
 
   # Persistence
   boot.initrd.postDeviceCommands = lib.mkAfter ''

@@ -12,6 +12,10 @@
     # Persistence declarations for impermanent root filesystems
     impermanence.url = "github:nix-community/impermanence";
     impermanence.inputs.nixpkgs.follows = "nixpkgs";
+
+    # Encrypted secrets managed declaratively by NixOS.
+    sops-nix.url = "github:Mic92/sops-nix";
+    sops-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = {
@@ -19,6 +23,7 @@
     nixpkgs,
     disko,
     impermanence,
+    sops-nix,
     ...
   } @ inputs: let
     # Supported systems for the formatter.
@@ -47,6 +52,7 @@
         modules = [
           disko.nixosModules.disko
           impermanence.nixosModules.impermanence
+          sops-nix.nixosModules.sops
 
           # > Our main NixOS configuration file <
           ./nixos/configuration.nix

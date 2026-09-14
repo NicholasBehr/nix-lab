@@ -1,0 +1,9 @@
+keys:
+  - &viktoria age1x9ltu89wd3tndwhvv8khcukkejgdwvtd0pptr9dtvh5sa8pwdglsp46tap
+  - &mac-recovery age1wcaqg233ajqj09ujdaj78xdpr9s3dcc5x9lt4tdagj98a6h4xp5s7wy5xz
+creation_rules:
+  - path_regex: secrets/.*\.yaml$
+    key_groups:
+      - age:
+          - *viktoria
+          - *mac-recovery
