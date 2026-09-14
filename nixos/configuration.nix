@@ -78,12 +78,38 @@
     };
   };
 
-  boot.initrd.postResumeCommands = lib.mkAfter ''
+  # Required for booting a ZFS root pool.
+  networking.hostId = "1bfa673a";
+
+  # Persistence
+  boot.initrd.postDeviceCommands = lib.mkAfter ''
     zfs rollback -r zpool/root@blank
   '';
 
-  # Required for booting a ZFS root pool.
-  networking.hostId = "1bfa673a";
+  environment.persistence."/persist16" = {
+    hideMounts = true;
+  };
+
+  environment.persistence."/persist128" = {
+    hideMounts = true;
+    directories = [
+      "/var/lib/nixos"
+    ];
+    files = [
+      "/etc/machine-id"
+      "/etc/ssh/ssh_host_ed25519_key"
+      "/etc/ssh/ssh_host_ed25519_key.pub"
+    ];
+  };
+
+  environment.persistence."/persist1024" = {
+    hideMounts = true;
+  };
+
+  fileSystems."/nix".neededForBoot = true;
+  fileSystems."/persist16".neededForBoot = true;
+  fileSystems."/persist128".neededForBoot = true;
+  fileSystems."/persist1024".neededForBoot = true;
 
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   system.stateVersion = "26.05";

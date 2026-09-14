@@ -8,12 +8,17 @@
     # Declarative disk partitioning/formatting
     disko.url = "github:nix-community/disko";
     disko.inputs.nixpkgs.follows = "nixpkgs";
+
+    # Persistence declarations for impermanent root filesystems
+    impermanence.url = "github:nix-community/impermanence";
+    impermanence.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = {
     self,
     nixpkgs,
     disko,
+    impermanence,
     ...
   } @ inputs: let
     # Supported systems for the formatter.
@@ -41,6 +46,7 @@
         specialArgs = {inherit inputs;};
         modules = [
           disko.nixosModules.disko
+          impermanence.nixosModules.impermanence
 
           # > Our main NixOS configuration file <
           ./nixos/configuration.nix
