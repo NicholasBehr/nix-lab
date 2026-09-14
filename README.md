@@ -38,104 +38,54 @@ pre-commit run --all-files
 
 ## First installation from a USB stick
 
-These steps install `viktoria` from the standard x86_64 NixOS graphical or
-minimal installer USB. They erase every disk listed in `nixos/disks.nix`; check
-the disk IDs on the target before running Disko. The Git repository is public,
-but the SSH host private key and the Mac Age recovery private key must never be
-committed to it.
+Use the standard x86_64 NixOS installer USB in UEFI mode. These target-side
+commands erase every disk listed in `nixos/disks.nix`. Verify those disk IDs
+before continuing. The repository is public at
+`https://github.com/NicholasBehr/nix-lab.git`; it must include the encrypted
+`secrets/secrets.yaml` file.
 
-Before booting the USB stick, ensure that the public repository contains the
-encrypted `secrets/secrets.yaml` file. Keep a copy of the server host private
-key generated below in the password manager. It is the server's SSH identity
-and its SOPS Age decryption identity.
+The server SSH host private key is also its SOPS Age identity. Before booting,
+put the backed-up `ssh_host_ed25519_key` alone on a small FAT-formatted USB
+drive labelled `HOSTKEY`, or attach an equivalent KVM virtual-media image.
+Keep that removable media private and detach it after installation. Do not put
+the key in Git.
 
-1. Boot the NixOS USB stick in UEFI mode, connect to the network, and become
-	 root:
+On the NixOS installer, connect networking, become root, and type:
 
-	 ```bash
-	 sudo -i
-	 nix --extra-experimental-features 'nix-command flakes' run nixpkgs#git -- \
-		 clone https://github.com/OWNER/nix-lab.git /tmp/nix-lab
-	 cd /tmp/nix-lab
-	 ```
+```bash
+sudo -i
+nix run nixpkgs#git -- clone https://github.com/NicholasBehr/nix-lab.git /tmp/n
+cd /tmp/n
+nix run github:nix-community/disko -- -m disko -f .#viktoria
+```
 
-	 Replace `OWNER` with the public GitHub account or organisation. For a
-	 different remote, use its public HTTPS clone URL.
+Disko mounts the new system at `/mnt`. Mount the `HOSTKEY` media and copy its
+private key to the persistent dataset:
 
-2. Verify that every entry in `nixos/disks.nix` names the intended target
-	 disk. The following command destroys and repartitions all of those disks,
-	 creates the ZFS pool, and mounts its filesystems below `/mnt`:
+```bash
+mkdir /key
+mount /dev/disk/by-label/HOSTKEY /key
+install -D -m600 /key/ssh_host_ed25519_key /mnt/persist128/etc/ssh/ssh_host_ed25519_key
+ssh-keygen -y -f /mnt/persist128/etc/ssh/ssh_host_ed25519_key >/mnt/persist128/etc/ssh/ssh_host_ed25519_key.pub
+umount /key
+```
 
-	 ```bash
-	 nix --extra-experimental-features 'nix-command flakes' run \
-		 github:nix-community/disko -- \
-		 --mode disko --root /mnt ./nixos/disko.nix
-	 ```
+Generate the hardware-specific file and install:
 
-3. Generate hardware-specific configuration, retaining Disko as the owner of
-	 filesystem declarations. Copy the generated file into the cloned checkout
-	 for this initial installation, then commit its hardware-specific contents to
-	 the public repository after the machine boots:
+```bash
+nixos-generate-config --no-filesystems --root /mnt
+cp /mnt/etc/nixos/hardware-configuration.nix nixos/
+nixos-install --root /mnt --flake /tmp/n#viktoria --no-root-passwd
+reboot
+```
 
-	 ```bash
-	 nixos-generate-config --no-filesystems --root /mnt
-	 cp /mnt/etc/nixos/hardware-configuration.nix \
-		 ./nixos/hardware-configuration.nix
-	 ```
+Remove both USB devices. Log in from the Mac using the private key matching the
+public `behrn` key configured in `nixos/configuration.nix`.
 
-4. Retrieve the backed-up host private key from the password manager into a
-	 temporary file on the installer. Do not type it into the shell history and
-	 do not place it in the Git checkout. Copy it to the mounted persistent
-	 dataset, where impermanence preserves it:
-
-	 ```bash
-	 install -d -m 700 /mnt/persist128/etc/ssh
-	 install -m 600 /path/to/retrieved/ssh_host_ed25519_key \
-		 /mnt/persist128/etc/ssh/ssh_host_ed25519_key
-	 ssh-keygen -y -f /mnt/persist128/etc/ssh/ssh_host_ed25519_key \
-		 > /mnt/persist128/etc/ssh/ssh_host_ed25519_key.pub
-	 chmod 644 /mnt/persist128/etc/ssh/ssh_host_ed25519_key.pub
-	 ```
-
-	 On a new host, create that key on the Mac before the installation:
-
-	 ```bash
-	 mkdir -p ~/.local/share/nix-lab/viktoria
-	 ssh-keygen -t ed25519 -N '' \
-		 -f ~/.local/share/nix-lab/viktoria/ssh_host_ed25519_key \
-		 -C viktoria
-	 nix run nixpkgs#ssh-to-age -- < \
-		 ~/.local/share/nix-lab/viktoria/ssh_host_ed25519_key.pub
-	 ```
-
-	Add the printed Age recipient to `.sops.yaml`, then use the Mac recovery
-	identity to update the encrypted file:
-
-	```bash
-	export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
-	nix shell nixpkgs#sops --command sops updatekeys secrets/secrets.yaml
-	```
-
-	Commit and push the encrypted file and policy before starting at step 1.
-
-5. Install using the cloned checkout. The persisted host key is available on
-	 first boot, letting `sops-nix` decrypt `secrets/secrets.yaml`:
-
-	 ```bash
-	 nixos-install --root /mnt --flake /tmp/nix-lab#viktoria --no-root-passwd
-	 reboot
-	 ```
-
-6. After reboot, remove the installer USB and verify both the host key and
-	 secret activation:
-
-	 ```bash
-	 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
-	 systemctl status sops-nix.service
-	 ```
-
-	 Log in from the Mac using the private key corresponding to the public
-	 `behrn` key declared in `nixos/configuration.nix`.
+For a brand-new host key, generate it on the Mac first, add the derived Age
+recipient to `.sops.yaml`, run `sops updatekeys secrets/secrets.yaml`, commit
+and push those public-repository changes, then put the generated private host
+key on the temporary `HOSTKEY` media before following these steps.
 
 ## SOPS bootstrap and recovery
 
