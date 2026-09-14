@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: nix-format
+        name: Format Nix files
+        entry: nix fmt . -- --check
+        language: system
+        files: \.nix$
+        pass_filenames: false
+
+      - id: nix-lint
+        name: Lint Nix files
+        entry: nix run nixpkgs#statix -- check
+        language: system
+        files: \.nix$
+        pass_filenames: false
+
+      - id: nix-flake-check
+        name: Check Nix flake
+        entry: nix flake check --no-build
+        language: system
+        files: (^flake\.nix$|^flake\.lock$|\.nix$)
+        pass_filenames: false
