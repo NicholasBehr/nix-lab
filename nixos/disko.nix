@@ -138,7 +138,7 @@ in
           };
 
           # Scratch/high-throughput NVMe target for mergerFS and SnapRAID staging.
-          nvme_data = {
+          nvme_data1 = {
             type = "zfs_fs";
             mountpoint = disks.nvmeDataMountpoint;
             options.recordsize = "1024K";
