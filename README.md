@@ -41,14 +41,15 @@ pre-commit run --all-files
 Use the standard x86_64 NixOS installer USB in UEFI mode. These target-side
 commands erase every disk listed in `nixos/disks.nix`. Verify those disk IDs
 before continuing. The repository is public at
-`https://github.com/NicholasBehr/nix-lab.git`; it must include the encrypted
-`secrets/secrets.yaml` file.
+`https://github.com/NicholasBehr/nix-lab.git`. The configured `behrn` password
+is a yescrypt hash in Nix, so this first installation does not need SOPS to
+decrypt a user password.
 
-The server SSH host private key is also its SOPS Age identity. Before booting,
-put the backed-up `ssh_host_ed25519_key` alone on a small FAT-formatted USB
-drive labelled `HOSTKEY`, or attach an equivalent KVM virtual-media image.
-Keep that removable media private and detach it after installation. Do not put
-the key in Git.
+The server SSH host private key from 1Password is also its SOPS Age identity.
+Before booting, export that existing private key as `ssh_host_ed25519_key` to a
+small FAT-formatted USB drive labelled `HOSTKEY`, or attach an equivalent KVM
+virtual-media image. Keep that removable media private and detach it after
+installation. Do not put either host key in Git.
 
 On the NixOS installer, connect networking, become root, and type:
 
@@ -88,10 +89,11 @@ public `behrn` key configured in `nixos/configuration.nix`. Copy the generated
 `nixos/hardware-configuration.nix` back to the public repository after boot so
 future rebuilds use the host's actual hardware configuration.
 
-For a brand-new host key, generate it on the Mac first, add the derived Age
-recipient to `.sops.yaml`, run `sops updatekeys secrets/secrets.yaml`, commit
-and push those public-repository changes, then put the generated private host
-key on the temporary `HOSTKEY` media before following these steps.
+After the first SSH login, configure SOPS application secrets. The host key is
+already present and persistent, so derive its Age recipient on the Mac from
+the public key exported from 1Password, replace the `&viktoria` value in
+`.sops.yaml`, run `sops updatekeys secrets/secrets.yaml`, and push. Pull the
+change on the host and run `sudo nixos-rebuild switch --flake .#viktoria`.
 
 ## SOPS bootstrap and recovery
 
@@ -101,40 +103,27 @@ key. The host SSH private key is stored in `/persist128`, so it survives the
 root rollback. `secrets/secrets.yaml` is encrypted to both this host-derived
 Age recipient and the Mac recovery Age recipient in `.sops.yaml`.
 
-Before the first installation, generate a host SSH key on the Mac and retain a
-copy of the private key in the password manager. Do not commit either key to
-this repository:
+Before the first installation, export the existing host public key from
+1Password to a temporary local file and derive its Age recipient. Do not commit
+either key to this repository:
 
 ```bash
-mkdir -p ~/.local/share/nix-lab/viktoria
-ssh-keygen -t ed25519 -N '' \
-	-f ~/.local/share/nix-lab/viktoria/ssh_host_ed25519_key \
-	-C viktoria
 nix run nixpkgs#ssh-to-age -- < \
-	~/.local/share/nix-lab/viktoria/ssh_host_ed25519_key.pub
+	/path/to/ssh_host_ed25519_key.pub
 ```
 
-The final command prints the host's public Age recipient. Add it to
-`.sops.yaml`, then update the existing encrypted file using the Mac recovery
-identity:
+Replace the value after `&viktoria` in `.sops.yaml` with the printed `age1...`
+recipient. Then update the encrypted file using the Mac recovery identity:
 
 ```bash
 export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
 nix shell nixpkgs#sops --command sops updatekeys secrets/secrets.yaml
 ```
 
-Create and encrypt the password hash using the Mac Age identity:
-
-```bash
-export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
-nix shell nixpkgs#mkpasswd --command mkpasswd -m yescrypt
-nix shell nixpkgs#sops --command sops secrets/secrets.yaml
-```
-
-Set `behrn-password` to the hash produced by `mkpasswd`. The configuration
-uses it as `hashedPasswordFile`, and it is available early enough to create the
-user during activation. Commit and push the resulting encrypted
-`secrets/secrets.yaml`; it is intended to be public.
+For application secrets, create or edit `secrets/secrets.yaml` using the Mac
+Age identity, then commit and push the encrypted file. It is intended to be
+public. Add each secret to the `sops.secrets` attribute set in
+`nixos/configuration.nix` only when a NixOS service needs it.
 
 For disk-loss recovery, restore those same two SSH host-key files into
 `/persist128/etc/ssh` before rebuilding with the USB flow above. The host can

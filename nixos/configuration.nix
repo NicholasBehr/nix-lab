@@ -54,7 +54,7 @@
   users.users = {
     behrn = {
       isNormalUser = true;
-      hashedPasswordFile = config.sops.secrets.behrn-password.path;
+      hashedPassword = "$y$j9T$87hUCCKozoNq59HPb4Nhp.$3HjAS8sqojmYB03OTFAYprGK6QlfnZDw/lGG.Q7zCu4";
       openssh.authorizedKeys.keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFiZnT6Yr2UhuX9cOgjWHAve+t0hJYIhz6Bby+dJsVf8"];
       extraGroups = ["wheel"];
     };
@@ -78,7 +78,6 @@
   sops = {
     defaultSopsFile = ../secrets/secrets.yaml;
     age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-    secrets.behrn-password.neededForUsers = true;
   };
 
   # Persistence
