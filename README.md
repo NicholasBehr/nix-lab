@@ -55,8 +55,8 @@ On the NixOS installer, connect networking, become root, and type:
 ```bash
 sudo -i
 export NIX_CONFIG='experimental-features = nix-command flakes'
-nix run nixpkgs#git -- clone https://github.com/NicholasBehr/nix-lab.git /tmp/n
-cd /tmp/n
+nix run nixpkgs#git -- clone https://github.com/NicholasBehr/nix-lab.git
+cd nix-lab
 nix run github:nix-community/disko -- -m disko -f .#viktoria
 ```
 
@@ -79,12 +79,14 @@ Generate the hardware-specific file and install:
 ```bash
 nixos-generate-config --no-filesystems --root /mnt
 cp /mnt/etc/nixos/hardware-configuration.nix nixos/
-nixos-install --root /mnt --flake /tmp/n#viktoria --no-root-passwd
+nixos-install --root /mnt --flake /root/nix-lab#viktoria --no-root-passwd
 reboot
 ```
 
 Remove both USB devices. Log in from the Mac using the private key matching the
-public `behrn` key configured in `nixos/configuration.nix`.
+public `behrn` key configured in `nixos/configuration.nix`. Copy the generated
+`nixos/hardware-configuration.nix` back to the public repository after boot so
+future rebuilds use the host's actual hardware configuration.
 
 For a brand-new host key, generate it on the Mac first, add the derived Age
 recipient to `.sops.yaml`, run `sops updatekeys secrets/secrets.yaml`, commit
@@ -96,7 +98,8 @@ key on the temporary `HOSTKEY` media before following these steps.
 This host uses `sops-nix` and derives its Age identity from the persistent
 `/etc/ssh/ssh_host_ed25519_key`. It does not have a separate server Age private
 key. The host SSH private key is stored in `/persist128`, so it survives the
-root rollback.
+root rollback. `secrets/secrets.yaml` is encrypted to both this host-derived
+Age recipient and the Mac recovery Age recipient in `.sops.yaml`.
 
 Before the first installation, generate a host SSH key on the Mac and retain a
 copy of the private key in the password manager. Do not commit either key to
@@ -111,19 +114,13 @@ nix run nixpkgs#ssh-to-age -- < \
 	~/.local/share/nix-lab/viktoria/ssh_host_ed25519_key.pub
 ```
 
-The final command prints the host's public Age recipient. Add it and the public
-Age recipient of the Mac recovery key to `.sops.yaml`:
+The final command prints the host's public Age recipient. Add it to
+`.sops.yaml`, then update the existing encrypted file using the Mac recovery
+identity:
 
-```yaml
-keys:
-	- &viktoria age1replace-with-host-recipient
-	- &mac-recovery age1replace-with-mac-recipient
-creation_rules:
-	- path_regex: secrets/.*\\.yaml$
-		key_groups:
-			- age:
-					- *viktoria
-					- *mac-recovery
+```bash
+export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
+nix shell nixpkgs#sops --command sops updatekeys secrets/secrets.yaml
 ```
 
 Create and encrypt the password hash using the Mac Age identity:
@@ -136,22 +133,10 @@ nix shell nixpkgs#sops --command sops secrets/secrets.yaml
 
 Set `behrn-password` to the hash produced by `mkpasswd`. The configuration
 uses it as `hashedPasswordFile`, and it is available early enough to create the
-user during activation.
-
-During installation, after the persistent filesystems are mounted at `/mnt`,
-copy the generated host key into the persistent dataset before running
-`nixos-install`:
-
-```bash
-install -d -m 700 /mnt/persist128/etc/ssh
-install -m 600 ~/.local/share/nix-lab/viktoria/ssh_host_ed25519_key \
-	/mnt/persist128/etc/ssh/ssh_host_ed25519_key
-install -m 644 ~/.local/share/nix-lab/viktoria/ssh_host_ed25519_key.pub \
-	/mnt/persist128/etc/ssh/ssh_host_ed25519_key.pub
-nixos-install --flake .#viktoria --no-root-passwd
-```
+user during activation. Commit and push the resulting encrypted
+`secrets/secrets.yaml`; it is intended to be public.
 
 For disk-loss recovery, restore those same two SSH host-key files into
-`/persist128/etc/ssh` before rebuilding. The host can then derive the same Age
-identity and decrypt its SOPS secrets. The Mac recovery Age key remains a
-second independent way to decrypt and edit the secrets.
+`/persist128/etc/ssh` before rebuilding with the USB flow above. The host can
+then derive the same Age identity and decrypt its SOPS secrets. The Mac
+recovery Age key remains a second independent way to decrypt and edit secrets.
