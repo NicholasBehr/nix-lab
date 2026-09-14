@@ -54,10 +54,14 @@ On the NixOS installer, connect networking, become root, and type:
 
 ```bash
 sudo -i
+export NIX_CONFIG='experimental-features = nix-command flakes'
 nix run nixpkgs#git -- clone https://github.com/NicholasBehr/nix-lab.git /tmp/n
 cd /tmp/n
 nix run github:nix-community/disko -- -m disko -f .#viktoria
 ```
+
+There must be a space between `--` and `clone`; `--clone` is interpreted as a
+Nix option.
 
 Disko mounts the new system at `/mnt`. Mount the `HOSTKEY` media and copy its
 private key to the persistent dataset:
