@@ -20,6 +20,11 @@
     # You can also split up your configuration and import pieces of it here:
     # ./users.nix
 
+    # Declarative disk partitioning/ZFS layout (disko); disk IDs live in ./disks.nix
+    ./disko.nix
+    # GRUB installed to mirrored EFI partitions
+    ./bootloader.nix
+
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
   ];
@@ -73,6 +78,13 @@
       PasswordAuthentication = false;
     };
   };
+
+  boot.initrd.postResumeCommands = lib.mkAfter ''
+    zfs rollback -r zpool/root@blank
+  '';
+
+  # Required for booting a ZFS root pool.
+  networking.hostId = "1bfa673a";
 
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   system.stateVersion = "25.11";

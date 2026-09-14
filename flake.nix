@@ -4,11 +4,16 @@
   inputs = {
     # Nixpkgs
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
+
+    # Declarative disk partitioning/formatting
+    disko.url = "github:nix-community/disko";
+    disko.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = {
     self,
     nixpkgs,
+    disko,
     ...
   } @ inputs: let
     # Supported systems for the formatter.
@@ -35,6 +40,8 @@
       viktoria = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
+          disko.nixosModules.disko
+
           # > Our main NixOS configuration file <
           ./nixos/configuration.nix
         ];
