@@ -25,6 +25,9 @@
     # GRUB installed to mirrored EFI partitions
     ./bootloader.nix
 
+    # Apply a standby timeout to the bulk HDDs declared in disks.nix
+    ./spindown.nix
+
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
   ];
