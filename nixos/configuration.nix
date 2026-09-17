@@ -28,6 +28,9 @@
     # Apply a standby timeout to the bulk HDDs declared in disks.nix
     ./spindown.nix
 
+    # SnapRAID, mergerFS pools, and the nightly NVMe cache mover
+    ./storage.nix
+
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
   ];
@@ -77,6 +80,7 @@
 
   # Required for booting a ZFS root pool.
   networking.hostId = "1bfa673a";
+  time.timeZone = "Europe/Zurich";
 
   sops = {
     defaultSopsFile = ../secrets/secrets.yaml;

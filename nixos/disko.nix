@@ -142,6 +142,8 @@ in
             type = "zfs_fs";
             mountpoint = disks.nvmeDataMountpoint;
             options.recordsize = "1024K";
+            options.atime = "on";
+            options.relatime = "on";
           };
 
           # Swap is ephemeral and encrypted with a random key at boot.
