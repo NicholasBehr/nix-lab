@@ -119,12 +119,14 @@ def scan_cache(
 
 
 def same_file_state(candidate: Candidate, file_stat: os.stat_result) -> bool:
-    return (
-        file_stat.st_dev == candidate.device
-        and file_stat.st_ino == candidate.inode
-        and file_stat.st_size == candidate.size
-        and file_stat.st_mtime_ns == candidate.mtime_ns
-        and file_stat.st_nlink == 1
+    return all(
+        (
+            file_stat.st_dev == candidate.device,
+            file_stat.st_ino == candidate.inode,
+            file_stat.st_size == candidate.size,
+            file_stat.st_mtime_ns == candidate.mtime_ns,
+            file_stat.st_nlink == 1,
+        )
     )
 
 
@@ -218,10 +220,12 @@ def validated_temporary_path(
         raise TypeError("pending marker has an invalid payload")
 
     relative_path = Path(payload["relative_path"])
-    if (
-        relative_path.is_absolute()
-        or ".." in relative_path.parts
-        or relative_path.name != f"{TEMP_PREFIX}{token}"
+    if any(
+        (
+            relative_path.is_absolute(),
+            ".." in relative_path.parts,
+            relative_path.name != f"{TEMP_PREFIX}{token}",
+        )
     ):
         raise ValueError("pending marker contains an unsafe temporary path")
     return destination_root / relative_path
