@@ -38,8 +38,10 @@ let
     "func.getattr=newest"
     "dropcacheonclose=false"
     "minfreespace=100G"
+    # NixOS `depends` below already requires and orders the branch mounts.
+    # mergerFS 2.40.2 supports this wait option, but not the newer
+    # `branches-mount-timeout-fail` option.
     "branches-mount-timeout=30"
-    "branches-mount-timeout-fail=true"
   ];
 
   storageMover = pkgs.writers.writePython3Bin "storage-mover" {
