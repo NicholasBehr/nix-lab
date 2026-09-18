@@ -7,8 +7,7 @@
 let
   disks = import ./disks.nix;
 
-  # Keep this small while validating eviction. Change to "2T" for production.
-  cacheLimit = "2G";
+  cacheLimit = "2T";
   cacheMountpoint = disks.nvmeDataMountpoint;
   hddPoolMountpoint = "/hdd_data";
   dataPoolMountpoint = "/data";
