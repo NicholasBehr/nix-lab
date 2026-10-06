@@ -2,7 +2,6 @@
 # Use this to configure your system environment (it replaces /etc/nixos/configuration.nix)
 {
   inputs,
-  lib,
   config,
   pkgs,
   ...
@@ -28,7 +27,7 @@
     # Apply a standby timeout to the bulk HDDs declared in disks.nix
     ./spindown.nix
 
-    # SnapRAID, mergerFS pools, and the nightly NVMe cache mover
+    # SnapRAID and mergerFS pools
     ./storage.nix
 
     # User-facing applications and shared reverse-proxy configuration
@@ -91,9 +90,23 @@
   };
 
   # Persistence
-  boot.initrd.postDeviceCommands = lib.mkAfter ''
-    zfs rollback -r zpool/root@blank
-  '';
+  boot.initrd.systemd = {
+    enable = true;
+    services.rollback-root = {
+      description = "Roll back the ephemeral root dataset";
+      requires = ["zfs-import-zpool.service"];
+      after = ["zfs-import-zpool.service"];
+      requiredBy = ["sysroot.mount"];
+      before = ["sysroot.mount"];
+      unitConfig.DefaultDependencies = false;
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        # Failure must prevent mounting root with state left from the last boot.
+        ExecStart = "${config.boot.zfs.package}/sbin/zfs rollback -r zpool/root@blank";
+      };
+    };
+  };
 
   environment.persistence = {
     "/persist16" = {

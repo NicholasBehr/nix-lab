@@ -2,6 +2,22 @@
 
 This repository contains a NixOS configuration flake.
 
+## Ephemeral root at boot
+
+The systemd initrd imports `zpool`, then `rollback-root.service` rolls
+`zpool/root` back to `zpool/root@blank` before `sysroot.mount` mounts it.
+The root mount requires a successful rollback; a missing snapshot or failed
+rollback stops normal boot instead of retaining the previous root state.
+The sibling datasets for `/nix`, persistence, and NVMe data are unaffected.
+
+Disko creates the blank snapshot during initial installation. A rebuild does
+not perform the rollback; changes to this initrd service take effect on reboot.
+After deploying and rebooting, inspect the boot with:
+
+```bash
+sudo journalctl -b -u zfs-import-zpool.service -u rollback-root.service -u sysroot.mount
+```
+
 ## Pre-commit checks
 
 Install the hooks once:

@@ -100,7 +100,7 @@ in {
         };
 
         datasets = {
-          # Ephemeral root: reset to the blank snapshot on reinstall/rebuild.
+          # Ephemeral root: reset to the blank snapshot by the initrd at each boot.
           root = {
             type = "zfs_fs";
             mountpoint = "/";
