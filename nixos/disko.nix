@@ -1,5 +1,4 @@
-{ lib, ... }:
-let
+{lib, ...}: let
   disks = import ./disks.nix;
 
   mkNvmeDisk = diskId: bootMountpoint: {
@@ -54,17 +53,18 @@ let
     lib.imap0 (index: diskId: {
       name = "nvme${toString (index + 1)}";
       value = mkNvmeDisk diskId (builtins.elemAt disks.bootMountpoints index);
-    }) disks.nvmeIds
+    })
+    disks.nvmeIds
   );
 
   hddDisks = builtins.listToAttrs (
     lib.imap0 (index: diskId: {
       name = "hdd${toString (index + 1)}";
       value = mkHddDisk diskId (builtins.elemAt disks.hddMountpoints index);
-    }) disks.hddIds
+    })
+    disks.hddIds
   );
-in
-{
+in {
   disko.devices = {
     disk = nvmeDisks // hddDisks;
 
@@ -90,7 +90,6 @@ in
                 ];
               }
             ];
-
           };
         };
         rootFsOptions = {
@@ -141,9 +140,11 @@ in
           nvme_data1 = {
             type = "zfs_fs";
             mountpoint = disks.nvmeDataMountpoint;
-            options.recordsize = "1024K";
-            options.atime = "on";
-            options.relatime = "on";
+            options = {
+              recordsize = "1024K";
+              atime = "on";
+              relatime = "on";
+            };
           };
 
           # Swap is ephemeral and encrypted with a random key at boot.

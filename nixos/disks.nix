@@ -26,8 +26,7 @@ let
 
   hddIds = hddDataIds ++ hddParityIds;
   hddMountpoints = hddDataMountpoints ++ hddParityMountpoints;
-in
-{
+in {
   inherit
     nvmeIds
     hddDataIds

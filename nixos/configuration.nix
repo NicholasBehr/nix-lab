@@ -31,6 +31,9 @@
     # SnapRAID, mergerFS pools, and the nightly NVMe cache mover
     ./storage.nix
 
+    # User-facing applications and shared reverse-proxy configuration
+    ../services
+
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
   ];
@@ -84,7 +87,7 @@
 
   sops = {
     defaultSopsFile = ../secrets/secrets.yaml;
-    age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+    age.sshKeyPaths = ["/etc/ssh/ssh_host_ed25519_key"];
   };
 
   # Persistence
@@ -92,30 +95,34 @@
     zfs rollback -r zpool/root@blank
   '';
 
-  environment.persistence."/persist16" = {
-    hideMounts = true;
+  environment.persistence = {
+    "/persist16" = {
+      hideMounts = true;
+    };
+
+    "/persist128" = {
+      hideMounts = true;
+      directories = [
+        "/var/lib/nixos"
+      ];
+      files = [
+        "/etc/machine-id"
+        "/etc/ssh/ssh_host_ed25519_key"
+        "/etc/ssh/ssh_host_ed25519_key.pub"
+      ];
+    };
+
+    "/persist1024" = {
+      hideMounts = true;
+    };
   };
 
-  environment.persistence."/persist128" = {
-    hideMounts = true;
-    directories = [
-      "/var/lib/nixos"
-    ];
-    files = [
-      "/etc/machine-id"
-      "/etc/ssh/ssh_host_ed25519_key"
-      "/etc/ssh/ssh_host_ed25519_key.pub"
-    ];
+  fileSystems = {
+    "/nix".neededForBoot = true;
+    "/persist16".neededForBoot = true;
+    "/persist128".neededForBoot = true;
+    "/persist1024".neededForBoot = true;
   };
-
-  environment.persistence."/persist1024" = {
-    hideMounts = true;
-  };
-
-  fileSystems."/nix".neededForBoot = true;
-  fileSystems."/persist16".neededForBoot = true;
-  fileSystems."/persist128".neededForBoot = true;
-  fileSystems."/persist1024".neededForBoot = true;
 
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   system.stateVersion = "26.05";

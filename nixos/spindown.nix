@@ -1,12 +1,10 @@
-{ pkgs, ... }:
-let
+{pkgs, ...}: let
   disks = import ./disks.nix;
   hddStandbyTimeout = "60";
-in
-{
+in {
   systemd.services.hdd-spindown = {
     description = "Apply standby timeout to bulk HDDs";
-    wantedBy = [ "multi-user.target" ];
+    wantedBy = ["multi-user.target"];
     path = [
       pkgs.hdparm
       pkgs.coreutils

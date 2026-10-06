@@ -3,11 +3,10 @@
   lib,
   pkgs,
   ...
-}:
-let
+}: let
   disks = import ./disks.nix;
 
-  cacheLimit = "2T";
+  cacheLimit = "2G";
   cacheMountpoint = disks.nvmeDataMountpoint;
   hddPoolMountpoint = "/hdd_data";
   dataPoolMountpoint = "/data";
@@ -17,20 +16,23 @@ let
     lib.imap1 (index: mountpoint: {
       name = "data${toString index}";
       value = mountpoint;
-    }) disks.hddDataMountpoints
+    })
+    disks.hddDataMountpoints
   );
 
-  parityFiles = map (
-    mountpoint: "${mountpoint}/snapraid.parity"
-  ) disks.hddParityMountpoints;
+  parityFiles =
+    map (
+      mountpoint: "${mountpoint}/snapraid.parity"
+    )
+    disks.hddParityMountpoints;
 
   # Keep redundant content files on independent disks. SnapRAID requires at
   # least one more content file than the configured number of parity files.
   contentFiles = map (
     mountpoint: "${mountpoint}/${snapraidMetadataDirectory}/snapraid.content"
-  ) ([ cacheMountpoint ] ++ disks.hddMountpoints);
+  ) ([cacheMountpoint] ++ disks.hddMountpoints);
 
-  allDataBranches = [ cacheMountpoint ] ++ disks.hddDataMountpoints;
+  allDataBranches = [cacheMountpoint] ++ disks.hddDataMountpoints;
 
   mergerfsCommonOptions = [
     "cache.files=off"
@@ -44,10 +46,9 @@ let
   ];
 
   storageMover = pkgs.writers.writePython3Bin "storage-mover" {
-    flakeIgnore = [ "E501" ];
+    flakeIgnore = ["E501"];
   } (builtins.readFile ./storage-mover.py);
-in
-{
+in {
   environment.systemPackages = [
     pkgs.mergerfs
     storageMover
@@ -59,11 +60,13 @@ in
     fsType = "fuse.mergerfs";
     device = builtins.concatStringsSep ":" disks.hddDataMountpoints;
     depends = disks.hddDataMountpoints;
-    options = mergerfsCommonOptions ++ [
-      "category.create=mfs"
-      "moveonenospc=mfs"
-      "fsname=mergerfs-hdd-data"
-    ];
+    options =
+      mergerfsCommonOptions
+      ++ [
+        "category.create=mfs"
+        "moveonenospc=mfs"
+        "fsname=mergerfs-hdd-data"
+      ];
   };
 
   # User-facing pool. ff selects the first eligible branch, so new files land
@@ -72,17 +75,14 @@ in
     fsType = "fuse.mergerfs";
     device = builtins.concatStringsSep ":" allDataBranches;
     depends = allDataBranches;
-    options = mergerfsCommonOptions ++ [
-      "category.create=ff"
-      "moveonenospc=mfs"
-      "fsname=mergerfs-data"
-    ];
+    options =
+      mergerfsCommonOptions
+      ++ [
+        "category.create=ff"
+        "moveonenospc=mfs"
+        "fsname=mergerfs-data"
+      ];
   };
-
-  systemd.tmpfiles.rules = map (
-    mountpoint:
-    "d ${mountpoint}/${snapraidMetadataDirectory} 0700 root root -"
-  ) ([ cacheMountpoint ] ++ disks.hddMountpoints);
 
   services.snapraid = {
     enable = true;
@@ -105,98 +105,104 @@ in
     };
   };
 
-  systemd.services = {
-    # Disko applies dataset properties when it creates/formats storage. Enforce
-    # these two mutable properties at boot as well for an existing dataset.
-    nvme-data-atime = {
-      description = "Enable relative access times on the NVMe data dataset";
-      wantedBy = [ "multi-user.target" ];
-      before = [ "storage-mover.service" ];
-      unitConfig.RequiresMountsFor = cacheMountpoint;
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = "${config.boot.zfs.package}/bin/zfs set atime=on relatime=on zpool/nvme_data1";
+  systemd = {
+    tmpfiles.rules = map (
+      mountpoint: "d ${mountpoint}/${snapraidMetadataDirectory} 0700 root root -"
+    ) ([cacheMountpoint] ++ disks.hddMountpoints);
+
+    services = {
+      # Disko applies dataset properties when it creates/formats storage. Enforce
+      # these two mutable properties at boot as well for an existing dataset.
+      nvme-data-atime = {
+        description = "Enable relative access times on the NVMe data dataset";
+        wantedBy = ["multi-user.target"];
+        before = ["storage-mover.service"];
+        unitConfig.RequiresMountsFor = cacheMountpoint;
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          ExecStart = "${config.boot.zfs.package}/bin/zfs set atime=on relatime=on zpool/nvme_data1";
+        };
       };
-    };
 
-    storage-mover = {
-      description = "Evict least-recently-accessed files from NVMe to HDD";
-      requires = [ "nvme-data-atime.service" ];
-      after = [ "nvme-data-atime.service" ];
-      unitConfig.RequiresMountsFor = [
-        cacheMountpoint
-        hddPoolMountpoint
-      ];
-      before = [ "snapraid-sync.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = lib.concatStringsSep " " [
-          "${storageMover}/bin/storage-mover"
-          "--source ${lib.escapeShellArg cacheMountpoint}"
-          "--destination ${lib.escapeShellArg hddPoolMountpoint}"
-          "--limit ${lib.escapeShellArg cacheLimit}"
-          "--minimum-mtime-age 300"
-          # A crashed copy is tracked on NVMe and removed after this grace
-          # period; no full scan of the HDD pool is needed.
-          "--stale-temp-age 3600"
-          "--rsync ${pkgs.rsync}/bin/rsync"
-          "--fuser ${pkgs.psmisc}/bin/fuser"
-        ];
-        Nice = 19;
-        IOSchedulingClass = "idle";
-        IOSchedulingPriority = 7;
-        CPUSchedulingPolicy = "batch";
-
-        CapabilityBoundingSet = [
-          "CAP_CHOWN"
-          "CAP_DAC_OVERRIDE"
-          "CAP_FOWNER"
-          "CAP_SYS_PTRACE"
-        ];
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        NoNewPrivileges = true;
-        PrivateDevices = true;
-        PrivateTmp = true;
-        ProtectClock = true;
-        ProtectControlGroups = true;
-        ProtectHostname = true;
-        ProtectKernelLogs = true;
-        ProtectKernelModules = true;
-        ProtectKernelTunables = true;
-        ProtectSystem = "strict";
-        ReadWritePaths = [
+      storage-mover = {
+        description = "Evict least-recently-accessed files from NVMe to HDD";
+        requires = ["nvme-data-atime.service"];
+        after = ["nvme-data-atime.service"];
+        unitConfig.RequiresMountsFor = [
           cacheMountpoint
           hddPoolMountpoint
         ];
-        RestrictAddressFamilies = "none";
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        SystemCallArchitectures = "native";
-        SystemCallFilter = "@system-service";
-        SystemCallErrorNumber = "EPERM";
+        before = ["snapraid-sync.service"];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = lib.concatStringsSep " " [
+            "${storageMover}/bin/storage-mover"
+            "--source ${lib.escapeShellArg cacheMountpoint}"
+            "--destination ${lib.escapeShellArg hddPoolMountpoint}"
+            "--limit ${lib.escapeShellArg cacheLimit}"
+            "--minimum-mtime-age 300"
+            # A crashed copy is tracked on NVMe and removed after this grace
+            # period; no full scan of the HDD pool is needed.
+            "--stale-temp-age 3600"
+            "--rsync ${pkgs.rsync}/bin/rsync"
+            "--fuser ${pkgs.psmisc}/bin/fuser"
+          ];
+          Nice = 19;
+          IOSchedulingClass = "idle";
+          IOSchedulingPriority = 7;
+          CPUSchedulingPolicy = "batch";
+
+          CapabilityBoundingSet = [
+            "CAP_CHOWN"
+            "CAP_DAC_OVERRIDE"
+            "CAP_FOWNER"
+            "CAP_SYS_PTRACE"
+          ];
+          LockPersonality = true;
+          MemoryDenyWriteExecute = true;
+          NoNewPrivileges = true;
+          PrivateDevices = true;
+          PrivateTmp = true;
+          ProtectClock = true;
+          ProtectControlGroups = true;
+          ProtectHostname = true;
+          ProtectKernelLogs = true;
+          ProtectKernelModules = true;
+          ProtectKernelTunables = true;
+          ProtectSystem = "strict";
+          ReadWritePaths = [
+            cacheMountpoint
+            hddPoolMountpoint
+          ];
+          RestrictAddressFamilies = "none";
+          RestrictNamespaces = true;
+          RestrictRealtime = true;
+          RestrictSUIDSGID = true;
+          SystemCallArchitectures = "native";
+          SystemCallFilter = "@system-service";
+          SystemCallErrorNumber = "EPERM";
+        };
       };
+
+      snapraid-sync = {
+        after = ["storage-mover.service"];
+        unitConfig.RequiresMountsFor =
+          [cacheMountpoint] ++ disks.hddMountpoints;
+      };
+
+      snapraid-scrub.unitConfig.RequiresMountsFor =
+        [cacheMountpoint] ++ disks.hddMountpoints;
     };
 
-    snapraid-sync = {
-      after = [ "storage-mover.service" ];
-      unitConfig.RequiresMountsFor =
-        [ cacheMountpoint ] ++ disks.hddMountpoints;
-    };
-
-    snapraid-scrub.unitConfig.RequiresMountsFor =
-      [ cacheMountpoint ] ++ disks.hddMountpoints;
-  };
-
-  systemd.timers.storage-mover = {
-    description = "Nightly NVMe cache eviction";
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnCalendar = "*-*-* 02:00:00";
-      Persistent = true;
-      Unit = "storage-mover.service";
+    timers.storage-mover = {
+      description = "Nightly NVMe cache eviction";
+      wantedBy = ["timers.target"];
+      timerConfig = {
+        OnCalendar = "*-*-* 02:00:00";
+        Persistent = true;
+        Unit = "storage-mover.service";
+      };
     };
   };
 }
