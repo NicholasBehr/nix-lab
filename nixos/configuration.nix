@@ -75,9 +75,21 @@
     settings = {
       # Opinionated: forbid root login through SSH.
       PermitRootLogin = "no";
-      # Opinionated: use keys only.
-      # Remove if you want to SSH using passwords
+      # Require public keys; password and keyboard-interactive authentication
+      # must both remain disabled to prevent password-based login.
       PasswordAuthentication = false;
+      KbdInteractiveAuthentication = false;
+      AuthenticationMethods = "publickey";
+
+      # This host only needs SSH for administration and deployment.
+      DisableForwarding = true;
+      X11Forwarding = false;
+      PermitUserEnvironment = false;
+
+      # Limit the account and time available for authentication attempts.
+      AllowUsers = ["behrn"];
+      LoginGraceTime = 30;
+      MaxAuthTries = 3;
     };
   };
 
