@@ -52,13 +52,32 @@ Run the checks manually at any time with:
 pre-commit run --all-files
 ```
 
+## Editing secrets on the Mac
+
+Run from the repository root. The Mac's existing age identity is stored at
+`~/.config/sops/age/keys.txt`; `.sops.yaml` defines the encryption recipients.
+SOPS can run from the pinned nixpkgs input without a permanent installation.
+
+Open the decrypted file in VS Code through SOPS:
+
+```bash
+SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt" \
+  SOPS_EDITOR="code --wait" \
+  nix run --inputs-from . nixpkgs#sops -- secrets/secrets.yaml
+```
+
+The `code` command must be on PATH. If it is missing, use VS Code's Command
+Palette action **Shell Command: Install 'code' command in PATH**.
+
+
 ## First installation from a USB stick
 
 Use the standard x86_64 NixOS installer USB in UEFI mode. These target-side
 commands erase every disk listed in `nixos/disks.nix`; verify those IDs first. The public
 repository is `https://github.com/NicholasBehr/nix-lab.git`. The `behrn`
-password is a yescrypt hash in Nix, so the first installation needs no SOPS
-decryption.
+password hash is stored in SOPS as `behrn-password-hash`. Restore the host key
+as described below before installing; it is required to decrypt the hash
+before user creation.
 
 On the installer console, connect networking, enable temporary SSH, and note
 the installer IP address:

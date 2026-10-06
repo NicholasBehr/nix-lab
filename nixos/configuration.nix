@@ -59,10 +59,11 @@
   # FIXME: Add the rest of your current configuration
 
   # TODO: Configure your system-wide user settings (groups, etc), add more users as needed.
+  users.mutableUsers = false;
   users.users = {
     behrn = {
       isNormalUser = true;
-      hashedPassword = "$y$j9T$87hUCCKozoNq59HPb4Nhp.$3HjAS8sqojmYB03OTFAYprGK6QlfnZDw/lGG.Q7zCu4";
+      hashedPasswordFile = config.sops.secrets.behrn-password-hash.path;
       openssh.authorizedKeys.keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFiZnT6Yr2UhuX9cOgjWHAve+t0hJYIhz6Bby+dJsVf8"];
       extraGroups = ["wheel"];
     };
@@ -86,7 +87,9 @@
 
   sops = {
     defaultSopsFile = ../secrets/secrets.yaml;
-    age.sshKeyPaths = ["/etc/ssh/ssh_host_ed25519_key"];
+    # Read the key before impermanence restores its /etc/ssh path.
+    age.sshKeyPaths = ["/persist128/etc/ssh/ssh_host_ed25519_key"];
+    secrets.behrn-password-hash.neededForUsers = true;
   };
 
   # Persistence
