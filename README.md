@@ -83,6 +83,17 @@ Run the checks manually at any time with:
 pre-commit run --all-files
 ```
 
+## Cold-file tier mover
+
+The mover's design, safety model, configuration reference, and operating guide
+are documented in [`pkgs/tier-mover/README.md`](pkgs/tier-mover/README.md).
+
+The host configuration uses `/nvme_data1` as the source and the entries in
+`hddDataMountpoints` as independent destinations. Applications continue to use
+`/data`; there is no separate HDD mergerFS mount. The hourly timer has a random
+delay of up to ten minutes; runs below `startAboveUsed` exit without stopping
+applications.
+
 ## Editing secrets on the Mac
 
 Run from the repository root. The Mac's existing age identity is stored at

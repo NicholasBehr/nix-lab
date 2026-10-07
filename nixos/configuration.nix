@@ -11,6 +11,7 @@
   imports = [
     # Shared mount lifecycle for services with bulk data on /data.
     inputs.self.nixosModules.bulk-storage
+    inputs.self.nixosModules.tier-mover
 
     # Or modules from other flakes (such as nixos-hardware):
     # inputs.hardware.nixosModules.common-cpu-amd

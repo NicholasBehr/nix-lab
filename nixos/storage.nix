@@ -6,7 +6,6 @@
   disks = import ./disks.nix;
 
   cacheMountpoint = disks.nvmeDataMountpoint;
-  hddPoolMountpoint = "/hdd_data";
   dataPoolMountpoint = "/data";
   snapraidMetadataDirectory = ".snapraid";
 
@@ -47,21 +46,6 @@ in {
     pkgs.mergerfs
   ];
 
-  # HDD-only pool. mfs selects the eligible HDD
-  # with the most absolute free space for each new file.
-  fileSystems.${hddPoolMountpoint} = {
-    fsType = "fuse.mergerfs";
-    device = builtins.concatStringsSep ":" disks.hddDataMountpoints;
-    depends = disks.hddDataMountpoints;
-    options =
-      mergerfsCommonOptions
-      ++ [
-        "category.create=mfs"
-        "moveonenospc=mfs"
-        "fsname=mergerfs-hdd-data"
-      ];
-  };
-
   # User-facing pool. ff selects the first eligible branch, so new files land
   # on NVMe while it has at least minfreespace available, then spill to HDD.
   fileSystems.${dataPoolMountpoint} = {
@@ -72,9 +56,37 @@ in {
       mergerfsCommonOptions
       ++ [
         "category.create=ff"
-        "moveonenospc=mfs"
         "fsname=mergerfs-data"
       ];
+  };
+
+  # Move cold files directly between backing filesystems. Applications keep
+  # using /data, and are stopped only when a run actually needs to move files.
+  homelab.tierMover = {
+    enable = true;
+    source = cacheMountpoint;
+    destinations = disks.hddDataMountpoints;
+    stateDirectory = "/persist128/var/lib/tier-mover";
+    startAboveUsed = "2T";
+    stopAtUsed = "1800G";
+    initialMinFileSize = "40G";
+    minimumFileSize = "1M";
+    sizeThresholdPercent = 90;
+    destinationFreeReserve = "100G";
+    quiesceServices = [
+      "nextcloud-setup"
+      "phpfpm-nextcloud"
+      "nextcloud-cron"
+      "nextcloud-update-db"
+    ];
+    requireInactiveServices = [
+      "snapraid-sync"
+      "snapraid-scrub"
+    ];
+    timer = {
+      enable = true;
+      interval = "hourly";
+    };
   };
 
   services.snapraid = {
@@ -83,6 +95,7 @@ in {
     exclude = [
       "/lost+found/"
       "/.snapraid/"
+      "/.tier-mover/"
       ".Trash-*/"
       "@Recycle/"
     ];

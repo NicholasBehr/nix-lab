@@ -41,6 +41,16 @@
     # Formatter for your nix files, available through 'nix fmt'
     formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.alejandra);
 
+    # The mover is compiled for the selected output platform. During deployment
+    # the x86_64-linux host builds this output natively.
+    packages = nixpkgs.lib.genAttrs ["aarch64-linux" "x86_64-linux"] (system: let
+      pkgs = nixpkgs.legacyPackages.${system};
+      tier-mover = pkgs.callPackage ./pkgs/tier-mover {};
+    in {
+      inherit tier-mover;
+      default = tier-mover;
+    });
+
     # Reusable nixos modules you might want to export
     nixosModules = import ./modules/nixos;
 
