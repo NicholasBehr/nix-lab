@@ -98,6 +98,9 @@
 
   # Required for booting a ZFS root pool.
   networking.hostId = "1bfa673a";
+  # Preserve ZFS's import safety check; use zfs_force=1 manually if an
+  # unclean shutdown leaves this single-host pool marked as in use.
+  boot.zfs.forceImportRoot = false;
   time.timeZone = "Europe/Zurich";
 
   sops = {
