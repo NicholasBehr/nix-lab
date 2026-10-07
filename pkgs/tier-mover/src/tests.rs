@@ -136,21 +136,23 @@ fn concurrent_scheduler_uses_multiple_destinations() {
         .map(transaction::stage_lock)
         .collect::<Result<Vec<_>>>()
         .unwrap();
-    let mut cfg = Config::default();
-    cfg.source = sandbox.path("source");
-    cfg.destinations = vec![sandbox.path("destination-1"), sandbox.path("destination-2")];
-    cfg.state_directory = sandbox.path("state");
-    cfg.require_mountpoints = false;
-    cfg.allow_same_filesystem = true;
-    cfg.usage = Usage::DirectoryAllocated;
-    cfg.start_above_used = "1B".into();
-    cfg.stop_at_used = "0B".into();
-    cfg.initial_min_file_size = "1B".into();
-    cfg.minimum_file_size = "1B".into();
-    cfg.destination_free_reserve = "0B".into();
-    cfg.minimum_modification_age_seconds = 0;
-    cfg.accounting_settle_seconds = 0;
-    cfg.max_parallel_moves = 2;
+    let cfg = Config {
+        source: sandbox.path("source"),
+        destinations: vec![sandbox.path("destination-1"), sandbox.path("destination-2")],
+        state_directory: sandbox.path("state"),
+        require_mountpoints: false,
+        allow_same_filesystem: true,
+        usage: Usage::DirectoryAllocated,
+        start_above_used: "1B".into(),
+        stop_at_used: "0B".into(),
+        initial_min_file_size: "1B".into(),
+        minimum_file_size: "1B".into(),
+        destination_free_reserve: "0B".into(),
+        minimum_modification_age_seconds: 0,
+        accounting_settle_seconds: 0,
+        max_parallel_moves: 2,
+        ..Config::default()
+    };
     let limits = cfg.validate().unwrap();
     let deadline = Instant::now() + Duration::from_secs(30);
     assert!(move_concurrent(&source, &destinations, &state, &cfg, &limits, deadline).unwrap());
@@ -164,6 +166,42 @@ fn concurrent_scheduler_uses_multiple_destinations() {
     };
     assert!(count("destination-1") > 0);
     assert!(count("destination-2") > 0);
+}
+
+#[test]
+fn threshold_reduction_does_not_count_as_no_progress() {
+    let sandbox = Sandbox::new();
+    write_pattern(&sandbox.path("source/file.bin"), 256 * 1024, 0x5a);
+    let (source, destinations, state) = roots(&sandbox);
+    let _locks = destinations
+        .iter()
+        .map(transaction::stage_lock)
+        .collect::<Result<Vec<_>>>()
+        .unwrap();
+    let cfg = Config {
+        source: sandbox.path("source"),
+        destinations: vec![sandbox.path("destination-1"), sandbox.path("destination-2")],
+        state_directory: sandbox.path("state"),
+        require_mountpoints: false,
+        allow_same_filesystem: true,
+        usage: Usage::DirectoryAllocated,
+        start_above_used: "1B".into(),
+        stop_at_used: "0B".into(),
+        initial_min_file_size: "1M".into(),
+        minimum_file_size: "1B".into(),
+        size_threshold_percent: 50,
+        destination_free_reserve: "0B".into(),
+        minimum_modification_age_seconds: 0,
+        accounting_settle_seconds: 0,
+        no_progress_limit: 1,
+        max_parallel_moves: 2,
+        ..Config::default()
+    };
+    let limits = cfg.validate().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+
+    assert!(move_concurrent(&source, &destinations, &state, &cfg, &limits, deadline).unwrap());
+    assert_eq!(usage(&source, &cfg, deadline).unwrap(), 0);
 }
 
 #[test]

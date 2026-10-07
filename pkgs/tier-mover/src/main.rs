@@ -42,6 +42,12 @@ fn scan(
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let mut queue = vec![PathBuf::from(".")];
     let mut files = vec![];
+    let mut excluded = 0u64;
+    let mut hardlinked = 0u64;
+    let mut recently_changed = 0u64;
+    let mut invalid_timestamp = 0u64;
+    let mut unsafe_or_unreadable = 0u64;
+    let mut first_open_error = None;
     while let Some(dir) = queue.pop() {
         check(deadline)?;
         let directory = source.open(&dir, libc::O_RDONLY | libc::O_DIRECTORY, 0)?;
@@ -56,12 +62,16 @@ fn scan(
                 continue;
             }
             if eligibility && cfg.exclude.iter().any(|p| relative.starts_with(p)) {
+                excluded += 1;
                 continue;
             }
             let file = match source.open(&relative, libc::O_RDONLY | fs::noatime(), 0) {
                 Ok(f) => f,
                 Err(e) => {
-                    eprintln!("skip {:?}: {e:#}", relative);
+                    unsafe_or_unreadable += 1;
+                    if first_open_error.is_none() {
+                        first_open_error = Some(format!("{relative:?}: {e:#}"));
+                    }
                     continue;
                 }
             };
@@ -74,20 +84,25 @@ fn scan(
                 continue;
             }
             let identity = Identity::of(&metadata);
-            if eligibility
-                && (identity.links != 1
-                    || identity.mtime < 0
+            if eligibility {
+                if identity.links != 1 {
+                    hardlinked += 1;
+                    continue;
+                }
+                if identity.mtime < 0
                     || identity.ctime < 0
-                    || now.saturating_sub(identity.mtime.max(identity.ctime) as u64)
-                        < cfg.minimum_modification_age_seconds
                     || identity.mtime as u64 > now
-                    || identity.ctime as u64 > now)
-            {
-                eprintln!(
-                    "skip {:?}: hardlinked, recently changed, or future timestamp",
-                    relative
-                );
-                continue;
+                    || identity.ctime as u64 > now
+                {
+                    invalid_timestamp += 1;
+                    continue;
+                }
+                if now.saturating_sub(identity.mtime.max(identity.ctime) as u64)
+                    < cfg.minimum_modification_age_seconds
+                {
+                    recently_changed += 1;
+                    continue;
+                }
             }
             files.push(Candidate { relative, identity });
         }
@@ -99,6 +114,15 @@ fn scan(
             &b.relative,
         ))
     });
+    if eligibility {
+        eprintln!(
+            "scan complete: eligibleFiles={}, excludedEntries={excluded}, hardlinkedFiles={hardlinked}, recentlyChangedFiles={recently_changed}, invalidTimestampFiles={invalid_timestamp}, unsafeOrUnreadableEntries={unsafe_or_unreadable}",
+            files.len()
+        );
+        if let Some(error) = first_open_error {
+            eprintln!("first unsafe or unreadable entry: {error}");
+        }
+    }
     Ok(files)
 }
 
@@ -152,7 +176,6 @@ fn dry_run_plan(
     deadline: Instant,
 ) -> Result<bool> {
     let candidates = scan(source, cfg, deadline, true)?;
-    eprintln!("scanned {} eligible regular files", candidates.len());
     let mut attempted = HashSet::new();
     let mut threshold = limits.initial;
     let current = usage(source, cfg, deadline)?;
@@ -223,7 +246,6 @@ fn move_concurrent(
     deadline: Instant,
 ) -> Result<bool> {
     let candidates = scan(source, cfg, deadline, true)?;
-    eprintln!("scanned {} eligible regular files", candidates.len());
     let mut attempted = HashSet::new();
     let mut threshold = limits.initial;
     let mut stagnant = 0;
@@ -235,6 +257,7 @@ fn move_concurrent(
         .collect::<Result<Vec<_>>>()?;
     let mut busy = vec![false; destinations.len()];
     let mut active = 0usize;
+    let mut completed_since_measurement = false;
     let mut first_error: Option<anyhow::Error> = None;
 
     let roots: Vec<_> = std::iter::once(source).chain(destinations.iter()).collect();
@@ -333,10 +356,13 @@ fn move_concurrent(
                 let (di, ci, result) = done_rx.recv().context("all destination workers stopped")?;
                 active -= 1;
                 busy[di] = false;
-                if let Err(e) = result {
-                    if first_error.is_none() {
-                        first_error =
-                            Some(e.context(format!("move {:?}", candidates[ci].relative)));
+                match result {
+                    Ok(()) => completed_since_measurement = true,
+                    Err(e) => {
+                        if first_error.is_none() {
+                            first_error =
+                                Some(e.context(format!("move {:?}", candidates[ci].relative)));
+                        }
                     }
                 }
                 // Keep filling free destinations using the shared prediction.
@@ -349,6 +375,23 @@ fn move_concurrent(
 
             if let Some(error) = first_error.take() {
                 return Err(error);
+            }
+            if !completed_since_measurement {
+                let any_at_threshold = candidates
+                    .iter()
+                    .enumerate()
+                    .any(|(ci, c)| !attempted.contains(&ci) && c.identity.size >= threshold);
+                ensure!(
+                    !any_at_threshold,
+                    "scheduler could not dispatch an eligible candidate"
+                );
+                if threshold == limits.minimum {
+                    eprintln!("target not reached: no eligible files remain; usedBytes={measured}");
+                    return Ok(false);
+                }
+                threshold = config::shrink(threshold, limits.minimum, cfg.size_threshold_percent);
+                eprintln!("minimum file size reduced to {threshold} bytes");
+                continue;
             }
             for _ in 0..cfg.accounting_settle_seconds {
                 check(deadline)?;
@@ -366,6 +409,7 @@ fn move_concurrent(
             }
             measured = next;
             predicted = measured;
+            completed_since_measurement = false;
             if measured <= limits.stop {
                 return Ok(true);
             }
