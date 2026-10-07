@@ -20,6 +20,35 @@ After deploying and rebooting, inspect the boot with:
 sudo journalctl -b -u zfs-import-zpool.service -u rollback-root.service -u sysroot.mount
 ```
 
+## Service bulk storage
+
+`modules/nixos/bulk-storage.nix` keeps an application's usual paths while storing
+its bulk files elsewhere. Services declare their needs; the module handles
+**backing mount → directory ownership → bind mount → consuming services**.
+This supports `/data` mounting later than the early-boot `/persist*` datasets.
+
+Declare storage in the service's file, for example:
+
+```nix
+homelab.bulkStorage.nextcloud = {
+  source = "/data/nextcloud";
+  target = "/var/lib/nextcloud/data";
+  user = "nextcloud";
+  group = "nextcloud";
+  services = ["nextcloud-setup" "phpfpm-nextcloud" "nextcloud-cron" "nextcloud-update-db"];
+};
+```
+
+The backing filesystem and user/group must already be declared. Paths should
+be absolute and normalized (no trailing slash or `..`). Permissions default to
+`0750`; `services` lists systemd names without `.service`. A service can depend
+on multiple entries. Directory creation is not recursive ownership repair, and
+mounting over an existing target does **not** migrate its contents.
+
+Keep config/database persistence and application settings in the service file.
+This module neither creates disks nor moves files or makes backups. Back up bulk
+sources separately: a `/persist*` snapshot does not include a nested bulk mount.
+
 ## Pre-commit checks
 
 Install the hooks once:

@@ -9,8 +9,8 @@
   # You can import other shared NixOS modules here. Host-specific modules,
   # including hardware configuration, are imported by each host entrypoint.
   imports = [
-    # If you want to use modules your own flake exports (from modules/nixos):
-    # inputs.self.nixosModules.example
+    # Shared mount lifecycle for services with bulk data on /data.
+    inputs.self.nixosModules.bulk-storage
 
     # Or modules from other flakes (such as nixos-hardware):
     # inputs.hardware.nixosModules.common-cpu-amd
