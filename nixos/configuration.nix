@@ -30,6 +30,9 @@
     # SnapRAID and mergerFS pools
     ./storage.nix
 
+    # Persistent, size-bounded system and service logs
+    ./logging.nix
+
     # User-facing applications and shared reverse-proxy configuration
     ../services
 

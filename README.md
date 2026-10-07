@@ -9,6 +9,8 @@ The systemd initrd imports `zpool`, then `rollback-root.service` rolls
 The root mount requires a successful rollback; a missing snapshot or failed
 rollback stops normal boot instead of retaining the previous root state.
 The sibling datasets for `/nix`, persistence, and NVMe data are unaffected.
+The complete `/var/log` hierarchy is persisted on `persist128`; journald keeps
+at most 1 GiB and 30 days of entries.
 
 Disko creates the blank snapshot during initial installation. A rebuild does
 not perform the rollback; changes to this initrd service take effect on reboot.
