@@ -14,6 +14,7 @@
     inputs.self.nixosModules.tier-mover
     inputs.self.nixosModules.maintenance
     ./maintenance.nix
+    ./backup.nix
 
     # Or modules from other flakes (such as nixos-hardware):
     # inputs.hardware.nixosModules.common-cpu-amd

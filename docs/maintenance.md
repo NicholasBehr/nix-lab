@@ -47,12 +47,15 @@ and restores the declared eligible services after all resume hooks succeed.
 
 ## Current host
 
-Nextcloud records its original maintenance mode, enables maintenance mode, and
-stops PHP, cron and setup/update writers before the PostgreSQL dump. A custom
-format dump is checked with `pg_restore --list` and published durably. Generated
-configuration links are also copied with their contents into the export. Archive
-sources include Nextcloud state/configuration, its explicit bulk-data mount,
-the application package and configured extra apps, plus this run's export.
+Nextcloud records its original maintenance mode and stops PHP, cron and
+setup/update writers. It applies its bounded trash retention while application
+OCC commands remain available, then enables maintenance mode before the
+PostgreSQL dump, keeping filesystem and database metadata consistent.
+A custom-format dump is checked with `pg_restore --list` and published durably.
+Generated configuration links are also copied with their contents into the
+export. Archive sources include Nextcloud state/configuration, its explicit
+bulk-data mount, the application package and configured extra apps, plus this
+run's export.
 Database roles and the declarative application environment must be recreated
 from the NixOS configuration when restoring. Test restoration into a separate
 instance; listing a dump is a structural check, not a complete restore test.
@@ -61,7 +64,14 @@ The application stays suspended while Borg reads its live files. Its data on
 NVMe is included even though SnapRAID protects only the HDD data branches.
 The mover runs next, followed by SnapRAID sync and Sunday scrub (8%, older than
 10 days). Mover exit 2 means safe but incomplete movement and is logged as a
-warning. SnapRAID's automatic commands never use force flags.
+warning. SnapRAID's automatic commands never use force flags. Sync runs
+`snapraid touch` both before and after: the first corrects tracked files before
+change detection, while the second also covers files newly registered by sync.
+
+Because serving Nextcloud's built-in maintenance page requires its PHP writer,
+nginx maps upstream 502/503/504 failures to a static 503 page stored in the Nix
+store. The page remains available while PHP and the data writers are stopped and
+also gives a useful response for an unexpected PHP outage.
 
 The old hourly mover and independent SnapRAID schedules are disabled. Their
 ordinary service/CLI entry points require an inherited coordinator session for
@@ -69,12 +79,12 @@ storage work. A stale marker alone cannot authorize a move. `--dry-run` remains
 available independently; even `--assume-quiescent` cannot bypass the configured
 external maintenance guard.
 
-**Borg destination and credentials are not configured in this repository yet.**
-The nightly timer is consequently inactive. A manual run rejects missing
-archive configuration before preparing applications. Once an archive command
-is configured, host policy enables the timer at 02:00 Europe/Zurich. The timer
-is not persistent: missed nights do not become daytime downtime after boot.
-Recovery of an interrupted run is separate and runs at boot.
+The BorgBase destination, append-only client key, SOPS credentials and pinned
+SSH host key are configured in `nixos/backup.nix`. The commissioned nightly
+timer runs the complete workflow at 02:00 Europe/Zurich. It is not persistent:
+missed nights do not become daytime downtime after boot. Recovery of an
+interrupted run is separate and runs at boot. A manual or scheduled run rejects
+missing archive configuration before preparing applications.
 
 ## Registering an application
 
@@ -133,7 +143,8 @@ files/directories through `backupSources`; do not substitute old exports after
 failure. Hook order is participant-name order, with resume in reverse order.
 Participants should not depend on each other's hooks. Shared infrastructure
 needed by hooks/recovery goes into `supportUnits`; it cannot also be a guarded
-writer.
+writer. Host tools needed by hook commands go into `pathPackages`; the same PATH
+is available when a later generation executes a saved recovery plan.
 
 Use the Rust helpers for application state and completed export publication:
 
@@ -152,9 +163,19 @@ reserve is 1 GiB, which does not promise an arbitrarily large export will fit.
 
 ## Connecting Borg
 
-Add archive configuration in a backup/application module, alongside its SOPS
-secrets and SSH known-host/key configuration. Initialize the repository and test
-authentication first. An illustrative Borg 1.x archive command is:
+The host Borg integration is in `nixos/backup.nix`, alongside its SOPS secret
+declarations and pinned SSH host key. `maintenance-borg` supplies the repository,
+secret paths, persistent client state and strict SSH settings for both manual
+commissioning and the archive hook. Initialize and inspect the repository as
+root so it uses the same credentials and state as maintenance:
+
+```sh
+sudo maintenance-borg init -e repokey-blake2
+sudo maintenance-borg info
+sudo maintenance-borg list
+```
+
+The archive hook follows this Borg 1.x shape:
 
 ```nix
 homelab.maintenance.archive = [''
@@ -167,20 +188,36 @@ homelab.maintenance.archive = [''
   )
   test "''${#sources[@]}" -gt 0
   exec ${pkgs.borgbackup}/bin/borg create --stats \
+    --one-file-system \
     "::maintenance-$(basename "$MAINTENANCE_RUN_DIR")" "''${sources[@]}"
 ''];
 ```
 
-Replace the example destination; declare the referenced secrets and known host.
 Never put passwords/key contents in Nix scripts or the store. Borg nonzero
 status, including warnings, conservatively fails the archive phase and skips
-storage work. Configure remote retention/prune policy separately; local export
-retention is not Borg archive retention. Any archive command must consume the
-whole declared source list and report failure if it cannot do so.
+storage work. Any archive command must consume the whole declared source list
+and report failure if it cannot do so.
+
+This repository uses append-only client access. The maintenance key can create
+archives and prune their visible archive list, but it cannot reclaim repository
+segments. After each successful create, the hook prunes `maintenance-*` archives
+to 7 daily, 4 weekly, and 6 monthly archives. The independently named
+commissioning archive is outside that policy. Periodically review the remaining
+archive list and use BorgBase's administrative **Compact repo** action to reclaim
+space. Never give the unattended host full deletion authority merely to compact
+the repository. Local export retention is independent of Borg archive retention.
 
 Explicitly include bulk mounts when using filesystem-boundary restrictions.
 Nextcloud's files below its home are on a nested bind mount; a snapshot of
 `persist128` alone is not a complete Nextcloud backup.
+
+Do not exclude Nextcloud `files_trashbin` paths directly in Borg. The database
+can still contain metadata for those files. The host instead configures a
+30-day maximum trash retention and runs Nextcloud's own expiration command
+after writers stop but before maintenance mode hides app commands. Older Borg
+archives retain their captured contents until the archive hook's retention
+policy removes them from the visible archive list and an administrator later
+compacts the append-only repository.
 
 ## Failure, cancellation, and recovery
 

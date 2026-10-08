@@ -47,7 +47,7 @@
   });
   runner = "${package}/bin/maintenance-runner";
   commonService = {
-    path = [pkgs.coreutils pkgs.systemd pkgs.util-linux package];
+    path = [pkgs.coreutils pkgs.systemd pkgs.util-linux package] ++ cfg.pathPackages;
     requires = cfg.supportUnits;
     after = ["local-fs.target"] ++ cfg.supportUnits;
     unitConfig.RequiresMountsFor = [cfg.stateDirectory] ++ cfg.requiredMounts;
@@ -188,6 +188,11 @@ in {
       type = types.listOf serviceUnit;
       default = [];
       description = "Infrastructure needed by hooks/recovery; must not be guarded writers.";
+    };
+    pathPackages = mkOption {
+      type = types.listOf types.package;
+      default = [];
+      description = "Host tools required on PATH by participant, archive, storage or saved recovery hooks.";
     };
     conflictingUnits = mkOption {
       type = types.listOf serviceUnit;

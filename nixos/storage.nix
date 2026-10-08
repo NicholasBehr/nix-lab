@@ -105,6 +105,9 @@ in {
 
   homelab.maintenance = {
     requiredMounts = [dataPoolMountpoint cacheMountpoint] ++ disks.hddMountpoints;
+    # The mover validates its ZFS source through the zfs CLI. This path also
+    # applies to boot/manual recovery of its saved transaction plan.
+    pathPackages = [config.boot.zfs.package];
     conflictingUnits = ["tier-mover.service" "snapraid-sync.service" "snapraid-scrub.service"];
     storageTasks = [
       {
@@ -120,8 +123,11 @@ in {
           ${storageGuard}
           # Retain SnapRAID's missing-disk/empty-file safety checks; never pass
           # force flags during automatic maintenance.
-          ${pkgs.snapraid}/bin/snapraid touch
-          exec ${pkgs.snapraid}/bin/snapraid sync
+          ${pkgs.snapraid}/bin/snapraid -q -q touch
+          ${pkgs.snapraid}/bin/snapraid sync
+          # The first touch only knows files already recorded in the content
+          # state. Correct newly added files after sync registers them too.
+          exec ${pkgs.snapraid}/bin/snapraid -q -q touch
         '';
       }
       {
@@ -148,6 +154,10 @@ in {
         # Keep the old entry point from starting an independent sync. The
         # actual foreground command is owned by maintenance above.
         serviceConfig.ExecStartPre = lib.mkForce [storageGuard];
+        # The upstream sandbox names the parity file itself. On a new array
+        # that path does not exist yet, so systemd fails before SnapRAID can
+        # create it. Grant only the configured mount roots instead.
+        serviceConfig.ReadWritePaths = lib.mkForce ([cacheMountpoint] ++ disks.hddMountpoints);
         unitConfig.RequiresMountsFor =
           [cacheMountpoint] ++ disks.hddMountpoints;
       };
@@ -155,6 +165,7 @@ in {
       snapraid-scrub = {
         startAt = lib.mkForce [];
         serviceConfig.ExecStartPre = storageGuard;
+        serviceConfig.ReadWritePaths = lib.mkForce ([cacheMountpoint] ++ disks.hddMountpoints);
         unitConfig.RequiresMountsFor = [cacheMountpoint] ++ disks.hddMountpoints;
       };
     };

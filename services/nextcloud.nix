@@ -16,6 +16,27 @@
   ...
 }: let
   hostName = "next.nicholasbehr.ch";
+  maintenancePage = pkgs.writeText "nextcloud-unavailable.html" ''
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Nextcloud maintenance</title>
+        <style>
+          body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 1rem system-ui, sans-serif; background: #f5f7fa; color: #1f2937; }
+          main { max-width: 34rem; margin: 2rem; padding: 2.5rem; border-radius: 1rem; background: white; box-shadow: 0 1rem 3rem rgb(15 23 42 / 12%); }
+          h1 { margin-top: 0; color: #00679e; }
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>Nextcloud is under maintenance</h1>
+          <p>The server is completing its backup and storage checks. Please try again shortly.</p>
+        </main>
+      </body>
+    </html>
+  '';
   # Follow the NixOS module's paths; only their backing storage is customized.
   stateDirectory = config.services.nextcloud.home;
   dataDirectory = "${config.services.nextcloud.datadir}/data";
@@ -65,6 +86,10 @@ in {
 
       settings = {
         default_phone_region = "CH";
+        # Bound deleted-file retention instead of excluding trash paths from
+        # backups behind Nextcloud's back. Expiration updates both storage and
+        # database metadata, preserving a consistent restore set.
+        trashbin_retention_obligation = "auto, 30";
         # Use the existing persistent, size-bounded journal instead of a bulk log.
         log_type = "systemd";
       };
@@ -77,6 +102,27 @@ in {
     nginx.virtualHosts.${hostName} = {
       enableACME = true;
       forceSSL = true;
+      # PHP-FPM is intentionally stopped while Borg reads the consistent live
+      # data tree. Serve a static page from the Nix store instead of exposing
+      # nginx's upstream 502 response. This also covers unexpected PHP outages.
+      extraConfig = ''
+        error_page 502 503 504 =503 /_nextcloud_unavailable.html;
+      '';
+      locations."= /_nextcloud_unavailable.html" = {
+        alias = maintenancePage;
+        extraConfig = ''
+          internal;
+          default_type text/html;
+          add_header Retry-After "300" always;
+          add_header Cache-Control "no-store" always;
+          add_header X-Content-Type-Options "nosniff" always;
+          add_header X-Robots-Tag "noindex, nofollow" always;
+          add_header X-Permitted-Cross-Domain-Policies "none" always;
+          add_header X-Frame-Options "sameorigin" always;
+          add_header Referrer-Policy "no-referrer" always;
+          add_header Strict-Transport-Security "max-age=15552000; includeSubDomains" always;
+        '';
+      };
     };
 
     # Keep the cluster on the 16K-recordsize dataset. Preserve the whole parent
@@ -137,9 +183,14 @@ in {
         status="$(${occ} status --output=json)"
         previous="$(printf '%s' "$status" | ${pkgs.jq}/bin/jq -er '.maintenance | tostring')"
         ${maintenanceRunner} remember maintenance "$previous"
-        ${occ} maintenance:mode --on
-        # Drain background work and PHP before exporting matching DB + files.
+        # Stop web/background writers while app-provided OCC commands are still
+        # available. Maintenance mode loads only core/AppAPI commands, so trash
+        # expiration must happen before enabling it.
         ${pkgs.systemd}/bin/systemctl stop ${lib.escapeShellArgs (activatorUnits ++ writerUnits)}
+        # This hook is now the only application writer. Raw Borg exclusions
+        # could leave matching database metadata without files after a restore.
+        ${occ} trashbin:expire --quiet
+        ${occ} maintenance:mode --on
       '';
       capture = ''
         ${pkgs.util-linux}/bin/runuser -u postgres -- \
