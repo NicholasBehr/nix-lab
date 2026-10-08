@@ -462,9 +462,20 @@ fn run() -> Result<i32> {
     )?)?;
     let limits = cfg.validate()?;
     ensure!(
-        dry_run || assume_quiescent || !cfg.quiesce_units.is_empty(),
+        dry_run
+            || assume_quiescent
+            || !cfg.quiesce_units.is_empty()
+            || !cfg.maintenance_guard.is_empty(),
         "stop all consumers and pass --assume-quiescent, or configure guarded quiesceUnits"
     );
+    if !dry_run && !cfg.maintenance_guard.is_empty() {
+        let args: Vec<_> = cfg.maintenance_guard[1..]
+            .iter()
+            .map(String::as_str)
+            .collect();
+        control::command(&cfg.maintenance_guard[0], &args)
+            .context("maintenance has not established safe storage suspension")?;
+    }
     #[cfg(not(target_os = "linux"))]
     ensure!(
         cfg.usage == Usage::DirectoryAllocated && !cfg.require_mountpoints,

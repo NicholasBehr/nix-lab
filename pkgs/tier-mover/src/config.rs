@@ -45,6 +45,9 @@ pub struct Config {
     pub exclude: Vec<PathBuf>,
     pub quiesce_units: Vec<String>,
     pub require_inactive_units: Vec<String>,
+    /// Optional external coordinator admission check. It inherits the session
+    /// lock descriptor and must reject stale/manual invocations.
+    pub maintenance_guard: Vec<String>,
 }
 
 impl Default for Config {
@@ -72,6 +75,7 @@ impl Default for Config {
             exclude: vec![".snapraid".into(), ".zfs".into(), "lost+found".into()],
             quiesce_units: vec![],
             require_inactive_units: vec![],
+            maintenance_guard: vec![],
         }
     }
 }
@@ -193,6 +197,12 @@ impl Config {
                     && u.bytes()
                         .all(|b| b.is_ascii_alphanumeric() || b"-_.@".contains(&b))),
             "invalid service unit name"
+        );
+        ensure!(
+            self.maintenance_guard.is_empty()
+                || (Path::new(&self.maintenance_guard[0]).is_absolute()
+                    && self.quiesce_units.is_empty()),
+            "external maintenance requires an absolute guard command and owns suspension"
         );
         Ok(l)
     }

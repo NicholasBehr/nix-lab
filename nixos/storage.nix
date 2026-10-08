@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   ...
@@ -30,6 +31,10 @@
   ) ([cacheMountpoint] ++ disks.hddMountpoints);
 
   allDataBranches = [cacheMountpoint] ++ disks.hddDataMountpoints;
+  maintenance = config.homelab.maintenance;
+  runner = "${maintenance.package}/bin/maintenance-runner";
+  storageGuard = "${runner} check-storage ${lib.escapeShellArg maintenance.stateDirectory}";
+  storageWriters = lib.unique (lib.concatMap (participant: participant.writerUnits) (lib.attrValues maintenance.participants));
 
   mergerfsCommonOptions = [
     "cache.files=off"
@@ -60,8 +65,7 @@ in {
       ];
   };
 
-  # Move cold files directly between backing filesystems. Applications keep
-  # using /data, and are stopped only when a run actually needs to move files.
+  # The coordinator owns suspension; the mover only owns file transactions.
   homelab.tierMover = {
     enable = true;
     source = cacheMountpoint;
@@ -73,20 +77,13 @@ in {
     minimumFileSize = "1M";
     sizeThresholdPercent = 90;
     destinationFreeReserve = "100G";
-    quiesceServices = [
-      "nextcloud-setup"
-      "phpfpm-nextcloud"
-      "nextcloud-cron"
-      "nextcloud-update-db"
-    ];
-    requireInactiveServices = [
-      "snapraid-sync"
-      "snapraid-scrub"
-    ];
-    timer = {
-      enable = true;
-      interval = "hourly";
-    };
+    maintenanceStateDirectory = maintenance.stateDirectory;
+    requireInactiveServices =
+      [
+        "snapraid-sync"
+        "snapraid-scrub"
+      ]
+      ++ map (lib.removeSuffix ".service") storageWriters;
   };
 
   services.snapraid = {
@@ -100,12 +97,44 @@ in {
       "@Recycle/"
     ];
 
-    sync.interval = "*-*-* 03:00:00";
     scrub = {
-      interval = "Sun *-*-* 04:00:00";
       plan = 8;
       olderThan = 10;
     };
+  };
+
+  homelab.maintenance = {
+    requiredMounts = [dataPoolMountpoint cacheMountpoint] ++ disks.hddMountpoints;
+    conflictingUnits = ["tier-mover.service" "snapraid-sync.service" "snapraid-scrub.service"];
+    storageTasks = [
+      {
+        name = "tier-mover";
+        script = "exec ${config.homelab.tierMover.command}";
+        recovery = "exec ${config.homelab.tierMover.command} --recover-only";
+        timeoutSeconds = config.homelab.tierMover.maximumRunSeconds + 300;
+        successExitCodes = [0 2];
+      }
+      {
+        name = "snapraid-sync";
+        script = ''
+          ${storageGuard}
+          # Retain SnapRAID's missing-disk/empty-file safety checks; never pass
+          # force flags during automatic maintenance.
+          ${pkgs.snapraid}/bin/snapraid touch
+          exec ${pkgs.snapraid}/bin/snapraid sync
+        '';
+      }
+      {
+        name = "snapraid-scrub";
+        weekdays = [7];
+        script = ''
+          ${storageGuard}
+          exec ${pkgs.snapraid}/bin/snapraid scrub \
+            -p ${toString config.services.snapraid.scrub.plan} \
+            -o ${toString config.services.snapraid.scrub.olderThan}
+        '';
+      }
+    ];
   };
 
   systemd = {
@@ -115,12 +144,19 @@ in {
 
     services = {
       snapraid-sync = {
+        startAt = lib.mkForce [];
+        # Keep the old entry point from starting an independent sync. The
+        # actual foreground command is owned by maintenance above.
+        serviceConfig.ExecStartPre = lib.mkForce [storageGuard];
         unitConfig.RequiresMountsFor =
           [cacheMountpoint] ++ disks.hddMountpoints;
       };
 
-      snapraid-scrub.unitConfig.RequiresMountsFor =
-        [cacheMountpoint] ++ disks.hddMountpoints;
+      snapraid-scrub = {
+        startAt = lib.mkForce [];
+        serviceConfig.ExecStartPre = storageGuard;
+        unitConfig.RequiresMountsFor = [cacheMountpoint] ++ disks.hddMountpoints;
+      };
     };
   };
 }

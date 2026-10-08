@@ -46,10 +46,16 @@
     packages = nixpkgs.lib.genAttrs ["aarch64-linux" "x86_64-linux"] (system: let
       pkgs = nixpkgs.legacyPackages.${system};
       tier-mover = pkgs.callPackage ./pkgs/tier-mover {};
+      maintenance-runner = pkgs.callPackage ./pkgs/maintenance-runner {};
     in {
-      inherit tier-mover;
+      inherit tier-mover maintenance-runner;
       default = tier-mover;
     });
+
+    checks.x86_64-linux.maintenance-vm = import ./tests/nixos/maintenance.nix {
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      maintenanceModule = self.nixosModules.maintenance;
+    };
 
     # Reusable nixos modules you might want to export
     nixosModules = import ./modules/nixos;

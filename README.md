@@ -90,9 +90,24 @@ are documented in [`pkgs/tier-mover/README.md`](pkgs/tier-mover/README.md).
 
 The host configuration uses `/nvme_data1` as the source and the entries in
 `hddDataMountpoints` as independent destinations. Applications continue to use
-`/data`; there is no separate HDD mergerFS mount. The hourly timer has a random
-delay of up to ten minutes; runs below `startAboveUsed` exit without stopping
-applications.
+`/data`; there is no separate HDD mergerFS mount. The mover is now a task in the
+shared maintenance window and has no independent hourly schedule. It requires
+the coordinator's verified writer suspension and session lock.
+
+## Nightly maintenance
+
+The lifecycle is **prepare → capture → suspend writers → archive → maintain
+storage → resume**. Applications register consistent capture and restoration
+hooks beside their service configuration. The Rust runner handles sequencing,
+timeouts, persistent recovery and declared storage writers; the mover has no
+application-specific suspension list.
+
+Read [docs/maintenance.md](docs/maintenance.md) for the contract, application
+registration example, Borg configuration, operation and recovery procedures.
+Nextcloud and storage are integrated. The Borg destination/credentials are still
+unconfigured, so the nightly timer remains inactive and manual runs abort before
+application preparation. Configuring the archive hook enables the host's 02:00
+timer. Independent mover/SnapRAID schedules have been disabled.
 
 ## Editing secrets on the Mac
 

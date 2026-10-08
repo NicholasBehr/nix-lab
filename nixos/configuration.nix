@@ -12,6 +12,8 @@
     # Shared mount lifecycle for services with bulk data on /data.
     inputs.self.nixosModules.bulk-storage
     inputs.self.nixosModules.tier-mover
+    inputs.self.nixosModules.maintenance
+    ./maintenance.nix
 
     # Or modules from other flakes (such as nixos-hardware):
     # inputs.hardware.nixosModules.common-cpu-amd

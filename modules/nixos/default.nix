@@ -2,4 +2,5 @@
 {
   bulk-storage = import ./bulk-storage.nix;
   tier-mover = import ./tier-mover.nix;
+  maintenance = import ./maintenance.nix;
 }

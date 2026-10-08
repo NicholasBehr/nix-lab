@@ -19,6 +19,20 @@
   # Follow the NixOS module's paths; only their backing storage is customized.
   stateDirectory = config.services.nextcloud.home;
   dataDirectory = "${config.services.nextcloud.datadir}/data";
+  maintenance = config.homelab.maintenance;
+  maintenanceRunner = "${maintenance.package}/bin/maintenance-runner";
+  occ = "${pkgs.util-linux}/bin/runuser -u nextcloud -- ${lib.getExe config.services.nextcloud.occ}";
+  writerUnits =
+    [
+      "nextcloud-setup.service"
+      "phpfpm-nextcloud.service"
+      "nextcloud-cron.service"
+      "nextcloud-update-db.service"
+    ]
+    ++ lib.optional config.services.nextcloud.autoUpdateApps.enable "nextcloud-update-plugins.service";
+  activatorUnits =
+    ["nextcloud-cron.timer"]
+    ++ lib.optional config.services.nextcloud.autoUpdateApps.enable "nextcloud-update-plugins.timer";
 in {
   services = {
     nextcloud = {
@@ -105,13 +119,65 @@ in {
     target = dataDirectory;
     user = "nextcloud";
     group = "nextcloud";
-    services = [
-      "nextcloud-setup"
-      "phpfpm-nextcloud"
-      "nextcloud-cron"
-      "nextcloud-update-db"
-    ];
+    services = map (lib.removeSuffix ".service") writerUnits;
   };
+
+  # This application owns capture consistency. The shared runner owns the
+  # fixed phase sequence, restart bookkeeping and the storage suspension gate.
+  homelab.maintenance = lib.mkIf maintenance.enable {
+    supportUnits = ["postgresql.service"];
+    participants.nextcloud = {
+      inherit writerUnits activatorUnits;
+      resumeUnits = ["phpfpm-nextcloud.service"];
+      backupSources =
+        [stateDirectory dataDirectory (toString config.services.nextcloud.package)]
+        ++ map toString (lib.attrValues config.services.nextcloud.extraApps);
+      prepare = ''
+        # Record before changing mode. Cleanup also runs after partial failure.
+        status="$(${occ} status --output=json)"
+        previous="$(printf '%s' "$status" | ${pkgs.jq}/bin/jq -er '.maintenance | tostring')"
+        ${maintenanceRunner} remember maintenance "$previous"
+        ${occ} maintenance:mode --on
+        # Drain background work and PHP before exporting matching DB + files.
+        ${pkgs.systemd}/bin/systemctl stop ${lib.escapeShellArgs (activatorUnits ++ writerUnits)}
+      '';
+      capture = ''
+        ${pkgs.util-linux}/bin/runuser -u postgres -- \
+          ${config.services.postgresql.package}/bin/pg_dump \
+          --format=custom --dbname=${lib.escapeShellArg config.services.nextcloud.config.dbname} \
+          > "$MAINTENANCE_EXPORT_DIR/database.dump.tmp"
+        ${config.services.postgresql.package}/bin/pg_restore \
+          --list "$MAINTENANCE_EXPORT_DIR/database.dump.tmp" > /dev/null
+        ${maintenanceRunner} publish database.dump.tmp database.dump
+        # Dereference generated configuration links so the export contains
+        # their contents even if an old Nix store generation is collected.
+        ${pkgs.coreutils}/bin/cp --archive --dereference \
+          ${lib.escapeShellArg "${config.services.nextcloud.datadir}/config"} \
+          "$MAINTENANCE_EXPORT_DIR/config.tmp"
+        ${maintenanceRunner} publish config.tmp config
+        # Declarative code must be installed before restoring this instance.
+        printf '%s\n' ${lib.escapeShellArg (toString config.services.nextcloud.package)} \
+          > "$MAINTENANCE_EXPORT_DIR/nextcloud-package.txt.tmp"
+        ${maintenanceRunner} publish nextcloud-package.txt.tmp nextcloud-package.txt
+      '';
+      resume = ''
+        saved="$MAINTENANCE_PARTICIPANT_DIR/application-state.json"
+        # Preparation may have failed before recording anything.
+        if [ -f "$saved" ]; then
+          previous="$(${pkgs.jq}/bin/jq -er '.maintenance | tostring' "$saved")"
+          if [ "$previous" = true ]; then
+            ${occ} maintenance:mode --on
+          else
+            ${occ} maintenance:mode --off
+          fi
+        fi
+      '';
+    };
+  };
+
+  # Upstream cron uses KillMode=process; storage suspension must also stop any
+  # descendants that could still write files after its main process exits.
+  systemd.services.nextcloud-cron.serviceConfig.KillMode = lib.mkForce "control-group";
 
   # NixOS orders setup before PHP-FPM; also prevent startup if setup fails.
   systemd.services.phpfpm-nextcloud.requires = ["nextcloud-setup.service"];

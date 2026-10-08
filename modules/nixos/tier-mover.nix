@@ -56,6 +56,11 @@
     maxParallelMoves = builtins.length cfg.destinations;
     quiesceUnits = unitNames;
     requireInactiveUnits = inactiveUnitNames;
+    maintenanceGuard = lib.optionals (cfg.maintenanceStateDirectory != null) [
+      "${(pkgs.callPackage ../../pkgs/maintenance-runner {})}/bin/maintenance-runner"
+      "check-storage"
+      cfg.maintenanceStateDirectory
+    ];
   };
   configFile = pkgs.writeText "tier-mover.json" (builtins.toJSON runtimeConfig);
 in {
@@ -124,6 +129,17 @@ in {
       default = [];
       description = "Services stopped during moves and guarded while recovery is pending; omit .service.";
     };
+    maintenanceStateDirectory = mkOption {
+      type = types.nullOr absolutePath;
+      default = null;
+      description = "External coordinator state directory. The mover requires its inherited session lock and never suspends/resumes applications itself.";
+    };
+    command = mkOption {
+      type = types.str;
+      readOnly = true;
+      default = "${package}/bin/tier-mover --config /etc/tier-mover/config.json";
+      description = "Configured foreground invocation for a maintenance storage task.";
+    };
     requireInactiveServices = mkOption {
       type = types.listOf (types.strMatching "[a-zA-Z0-9_.@-]+");
       default = [];
@@ -141,6 +157,10 @@ in {
 
   config = mkIf cfg.enable {
     assertions = [
+      {
+        assertion = cfg.maintenanceStateDirectory == null || (cfg.quiesceServices == [] && !cfg.timer.enable);
+        message = "Externally maintained tier-mover must not own suspension or have an independent timer.";
+      }
       {
         assertion = cfg.destinations != [];
         message = "homelab.tierMover.destinations must not be empty.";

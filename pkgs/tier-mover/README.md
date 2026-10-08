@@ -83,6 +83,17 @@ persistent storage and must not be deleted to clear an error.
 
 ## NixOS configuration
 
+The host uses **external maintenance ownership**: `maintenanceStateDirectory`
+points at the coordinator's persistent state, `quiesceServices` is empty, and
+the independent timer is disabled. The coordinator derives inactive writers
+from application registrations and invokes the mover after archive. The mover
+keeps its transaction journals and mount checks but never resumes applications.
+An inherited live session lock and verified suspension are required for both
+movement and recovery; `--assume-quiescent` cannot bypass this guard. Dry runs
+remain independent. See [the maintenance guide](../../docs/maintenance.md).
+
+The standalone configuration below remains supported for other hosts.
+
 The NixOS module is
 [`modules/nixos/tier-mover.nix`](../../modules/nixos/tier-mover.nix). The source
 and every destination must also be declared in NixOS `fileSystems`.
@@ -146,6 +157,7 @@ module and binary; callers should configure the NixOS options instead.
 | `exclude` | `.snapraid`, `.zfs`, `lost+found` | Relative source paths whose complete subtrees are ignored. |
 | `quiesceServices` | `[]` | Services to stop only when moves or recovery are needed and restart afterward; omit `.service`. |
 | `requireInactiveServices` | `[]` | Services that must already be inactive during movement; omit `.service`. |
+| `maintenanceStateDirectory` | `null` | Optional external coordinator state directory; requires its live session and prohibits mover-owned suspension/timers. |
 | `timer.enable` | `false` | Enable the systemd timer. |
 | `timer.interval` | `hourly` | systemd `OnCalendar` expression. |
 
@@ -179,6 +191,11 @@ Run the configured systemd service and inspect its log:
 sudo systemctl start tier-mover.service
 sudo journalctl -u tier-mover.service --no-pager
 ```
+
+On this host, use `sudo systemctl start maintenance-run.service` instead.
+The standalone commands above/below require the coordinator when external
+maintenance ownership is configured. For interrupted host runs, use
+`sudo systemctl start maintenance-recover.service`.
 
 Explicitly process a pending journal without selecting new files:
 
