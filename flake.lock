@@ -78,11 +78,28 @@
         "type": "github"
       }
     },
+    "nixpkgs-immich": {
+      "locked": {
+        "lastModified": 1791622989,
+        "narHash": "sha256-nxraVV8wm2PscojMWbd5V66NXW8L5cze473/pjcqT/8=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "dc7ce40f55f1dd5ee00f540e91737a758ba63705",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "master",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "disko": "disko",
         "impermanence": "impermanence",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-immich": "nixpkgs-immich",
         "sops-nix": "sops-nix"
       }
     },

@@ -104,10 +104,21 @@ application-specific suspension list.
 
 Read [docs/maintenance.md](docs/maintenance.md) for the contract, application
 registration example, Borg configuration, operation and recovery procedures.
-Nextcloud and storage are integrated. The Borg destination/credentials are still
-unconfigured, so the nightly timer remains inactive and manual runs abort before
-application preparation. Configuring the archive hook enables the host's 02:00
-timer. Independent mover/SnapRAID schedules have been disabled.
+Nextcloud, Immich and storage are integrated. The Borg destination, SOPS
+credentials and 02:00 timer are declared. Confirm that the BorgBase repository
+has been initialized and a full run succeeds before relying on nightly backups.
+Independent mover/SnapRAID schedules have been disabled.
+
+Immich uses the native NixOS service with CPU machine learning and a separately
+pinned current Immich package. Intel Quick Sync accelerates video encoding and
+decoding; the shared Intel drivers live in `nixos/configuration.nix`, while
+Immich grants access only to its render device. Its public address is
+`https://immich.nicholasbehr.ch`. PostgreSQL's major version and persistent
+cluster storage are host settings in `nixos/postgresql.nix`, so disabling
+Nextcloud does not remove Immich's database. The applications have separate
+databases, Redis instances and bulk-data directories. See
+[docs/immich.md](docs/immich.md) for Immich operation and verification, and
+[docs/maintenance.md](docs/maintenance.md) for the shared backup lifecycle.
 
 ## Editing secrets on the Mac
 

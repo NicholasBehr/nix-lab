@@ -5,6 +5,10 @@
     # Nixpkgs
     nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
 
+    # Immich 2.x in 26.05 is marked insecure. Pin a current 3.x package
+    # separately so the rest of the host remains on the stable release.
+    nixpkgs-immich.url = "github:nixos/nixpkgs/master";
+
     # Declarative disk partitioning/formatting
     disko.url = "github:nix-community/disko";
     disko.inputs.nixpkgs.follows = "nixpkgs";
@@ -21,6 +25,7 @@
   outputs = {
     self,
     nixpkgs,
+    nixpkgs-immich,
     disko,
     impermanence,
     sops-nix,

@@ -13,9 +13,11 @@ of eligible services. Storage tools own their transactions and recovery.
 
 The reusable module is `modules/nixos/maintenance.nix`; its Rust coordinator is
 `pkgs/maintenance-runner`. Host scheduling/persistence policy lives in
-`nixos/maintenance.nix`. Nextcloud hooks live in `services/nextcloud.nix`, and
-storage tasks live in `nixos/storage.nix`. The coordinator has no knowledge of
-those applications or tools.
+`nixos/maintenance.nix`. Nextcloud and Immich hooks live in their respective
+files under `services/`, while storage tasks live in `nixos/storage.nix`.
+PostgreSQL's major version and persistent cluster storage are owned by
+`nixos/postgresql.nix`. The coordinator has no knowledge of individual
+applications or tools.
 
 ## Contracts
 
@@ -60,8 +62,38 @@ Database roles and the declarative application environment must be recreated
 from the NixOS configuration when restoring. Test restoration into a separate
 instance; listing a dump is a structural check, not a complete restore test.
 
+Immich uses a separate `immich` database and Redis instance in the same host
+PostgreSQL installation. Its server stops before `pg_dump`, leaving its database
+and media tree unchanged until the archive completes. The custom-format dump is
+checked with `pg_restore --list`, then archived together with `/var/lib/immich`,
+the explicit `/var/lib/immich/media` bind mount and the exact Immich package.
+The built-in 02:00 database backup is disabled to avoid competing with this
+consistent capture. `/var/cache/immich` is persisted for downloaded CPU ML
+models but is deliberately excluded from Borg because it can be regenerated.
+No new SOPS secret is needed: Immich connects to its local PostgreSQL and Redis
+Unix sockets. The PostgreSQL major version and `/persist16/var/lib/postgresql`
+persistence remain declared if Nextcloud is disabled; the two applications do
+not rely on each other's database or service unit. Setting either application's
+`enable` option to `false` also removes its maintenance hooks, bulk mount,
+proxy and application persistence declarations. The shared PostgreSQL service
+and its persisted cluster remain enabled independently.
+
+On restoration, use a matching Immich version before starting the service,
+recreate its database role/extensions through the NixOS module, restore its
+database dump and media/state from the *same* successful archive, then start
+the server. Do not restore the database alone or assume a NixOS generation
+rollback reverses Immich schema migrations. Verify a restore in an isolated
+instance before treating the archive as recoverable.
+
 The application stays suspended while Borg reads its live files. Its data on
 NVMe is included even though SnapRAID protects only the HDD data branches.
+This applies to Immich too. With an initial 500 GB–2 TB photo library, a first
+remote archive can make **both** Immich and Nextcloud unavailable for hours and
+may hit the default four-hour archive timeout. Commission the initial backup
+in planned chunks during a maintenance window and inspect its successful result
+before large uploads. Subsequent runs still need to scan both trees; monitor
+actual outage length and archive time, then revisit the shared maintenance
+design if it exceeds the acceptable nightly window.
 The mover runs next, followed by SnapRAID sync and Sunday scrub (8%, older than
 10 days). Mover exit 2 means safe but incomplete movement and is logged as a
 warning. SnapRAID's automatic commands never use force flags. Sync runs

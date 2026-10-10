@@ -15,6 +15,7 @@
     inputs.self.nixosModules.maintenance
     ./maintenance.nix
     ./backup.nix
+    ./postgresql.nix
 
     # Or modules from other flakes (such as nixos-hardware):
     # inputs.hardware.nixosModules.common-cpu-amd
@@ -50,6 +51,13 @@
       # Disable if you don't want unfree packages
       allowUnfree = true;
     };
+  };
+
+  # Host GPU drivers are shared by Immich and future media services.
+  # Each service grants its own device access and selects its acceleration API.
+  hardware.graphics = {
+    enable = true;
+    extraPackages = with pkgs; [intel-media-driver vpl-gpu-rt];
   };
 
   nix = {
