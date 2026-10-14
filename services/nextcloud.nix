@@ -82,9 +82,15 @@ in {
           # Redis nor PostgreSQL needs a public port or a database password secret.
           configureRedis = true;
 
-          # Keep executable application code declarative. Add optional apps through
-          # extraApps using pkgs.nextcloud35Packages.apps, then rebuild to update them.
+          # Keep executable application code declarative. Rebuild to update apps.
           appstoreEnable = false;
+          extraApps.tutamail = pkgs.fetchNextcloudApp {
+            appName = "tutamail";
+            appVersion = "1.2.3612610060";
+            license = "gpl3Plus";
+            hash = "sha256-aZafOFaneg/Hi/xo66GYQbYhJ8Hv4QDIYzHsyO8BgQ0=";
+            url = "https://github.com/tutao/tutanota/releases/download/tutamail-nextcloud-release-1.2.3612610060/tutamail.tar.gz";
+          };
 
           settings = {
             default_phone_region = "CH";
