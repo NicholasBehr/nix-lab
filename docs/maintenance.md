@@ -13,7 +13,7 @@ of eligible services. Storage tools own their transactions and recovery.
 
 The reusable module is `modules/nixos/maintenance.nix`; its Rust coordinator is
 `pkgs/maintenance-runner`. Host scheduling/persistence policy lives in
-`nixos/maintenance.nix`. Nextcloud and Immich hooks live in their respective
+`nixos/maintenance.nix`. Nextcloud, Immich and Paperless hooks live in their respective
 files under `services/`, while storage tasks live in `nixos/storage.nix`.
 PostgreSQL's major version and persistent cluster storage are owned by
 `nixos/postgresql.nix`. The coordinator has no knowledge of individual
@@ -71,12 +71,24 @@ The built-in 02:00 database backup is disabled to avoid competing with this
 consistent capture. `/var/cache/immich` is persisted for downloaded CPU ML
 models but is deliberately excluded from Borg because it can be regenerated.
 No new SOPS secret is needed: Immich connects to its local PostgreSQL and Redis
-Unix sockets. The PostgreSQL major version and `/persist16/var/lib/postgresql`
-persistence remain declared if Nextcloud is disabled; the two applications do
-not rely on each other's database or service unit. Setting either application's
-`enable` option to `false` also removes its maintenance hooks, bulk mount,
-proxy and application persistence declarations. The shared PostgreSQL service
-and its persisted cluster remain enabled independently.
+Unix sockets.
+
+Paperless stops its scheduler and allows its Celery worker up to 15 minutes to
+finish active OCR work. Web, consumer, worker and scheduler stay stopped until
+Borg finishes.
+Its PostgreSQL dump is checked with `pg_restore --list`. The archive includes
+the dump, `/var/lib/paperless` (including its generated signing key and search
+index), and the explicit media and consumption bind mounts under
+`/data/paperless`. The exact Paperless package is recorded and included. Redis
+broker state is outside the archive; incomplete work should be checked after a
+recovery.
+See [paperless.md](paperless.md) for restore steps and verification.
+
+The PostgreSQL major version and `/persist16/var/lib/postgresql` persistence
+remain declared independently of these applications. Each service has its own
+database and service units. Disabling any application removes its maintenance
+hooks, bulk mounts, proxy and application persistence declarations; PostgreSQL
+and its persisted cluster remain enabled.
 
 On restoration, use a matching Immich version before starting the service,
 recreate its database role/extensions through the NixOS module, restore its
@@ -85,9 +97,9 @@ the server. Do not restore the database alone or assume a NixOS generation
 rollback reverses Immich schema migrations. Verify a restore in an isolated
 instance before treating the archive as recoverable.
 
-The application stays suspended while Borg reads its live files. Its data on
+Each application stays suspended while Borg reads its live files. Its data on
 NVMe is included even though SnapRAID protects only the HDD data branches.
-This applies to Immich too. With an initial 500 GB–2 TB photo library, a first
+This applies to Immich and Paperless too. With an initial 500 GB–2 TB photo library, a first
 remote archive can make **both** Immich and Nextcloud unavailable for hours and
 may hit the default four-hour archive timeout. Commission the initial backup
 in planned chunks during a maintenance window and inspect its successful result
@@ -102,8 +114,8 @@ change detection, while the second also covers files newly registered by sync.
 
 Because serving Nextcloud's built-in maintenance page requires its PHP writer,
 nginx maps upstream 502/503/504 failures to a static 503 page stored in the Nix
-store. The page remains available while PHP and the data writers are stopped and
-also gives a useful response for an unexpected PHP outage.
+store. Immich and Paperless have equivalent static pages. They remain available
+while the application writers are stopped and also cover unexpected outages.
 
 The old hourly mover and independent SnapRAID schedules are disabled. Their
 ordinary service/CLI entry points require an inherited coordinator session for
@@ -144,8 +156,8 @@ homelab.maintenance.participants.documents = {
 };
 ```
 
-This is the registration shape, not a ready-to-run Paperless backup recipe.
-Choose the actual service's supported export procedure and restoration test.
+This shows the registration shape. The actual Paperless implementation is in
+`services/paperless.nix`; choose each service's supported capture and restore test.
 
 `writerUnits` includes all processes managed by systemd that can write the
 moved storage, including setup/migration units. `resumeUnits` is the subset of
@@ -240,8 +252,8 @@ space. Never give the unattended host full deletion authority merely to compact
 the repository. Local export retention is independent of Borg archive retention.
 
 Explicitly include bulk mounts when using filesystem-boundary restrictions.
-Nextcloud's files below its home are on a nested bind mount; a snapshot of
-`persist128` alone is not a complete Nextcloud backup.
+Nextcloud, Immich and Paperless have nested bind mounts; a snapshot of
+`persist128` alone is not a complete application backup.
 
 Do not exclude Nextcloud `files_trashbin` paths directly in Borg. The database
 can still contain metadata for those files. The host instead configures a

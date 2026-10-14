@@ -104,7 +104,7 @@ application-specific suspension list.
 
 Read [docs/maintenance.md](docs/maintenance.md) for the contract, application
 registration example, Borg configuration, operation and recovery procedures.
-Nextcloud, Immich and storage are integrated. The Borg destination, SOPS
+Nextcloud, Immich, Paperless and storage are integrated. The Borg destination, SOPS
 credentials and 02:00 timer are declared. Confirm that the BorgBase repository
 has been initialized and a full run succeeds before relying on nightly backups.
 Independent mover/SnapRAID schedules have been disabled.
@@ -119,6 +119,29 @@ Nextcloud does not remove Immich's database. The applications have separate
 databases, Redis instances and bulk-data directories. See
 [docs/immich.md](docs/immich.md) for Immich operation and verification, and
 [docs/maintenance.md](docs/maintenance.md) for the shared backup lifecycle.
+
+Paperless 3 is available at `https://paper.nicholasbehr.ch` after deployment
+and first-user creation. It uses the matching module and package from a pinned
+`nixos-unstable` input, local PostgreSQL/Redis, and document storage under
+`/data/paperless`. See [docs/paperless.md](docs/paperless.md) for commissioning,
+OCR behaviour, backups and restoration.
+
+## NixOS and application versions
+
+The host stays on NixOS 26.05. The default for services is the host's `pkgs` and
+native NixOS module. Nextcloud uses `pkgs.nextcloud35` from that same package
+set: its major version changes only after an explicit review. Immich already
+has a separate `nixpkgs-immich` input for its newer package. Paperless has a
+separate `nixpkgs-paperless` input because version 3 also needs its matching
+native module. Do not add an input for every service; each extra pin needs its
+own update and compatibility review.
+
+When NixOS 26.11 is released, upgrade the host in a separate change. Review
+Nextcloud's supported major version and migrations, Immich's package source,
+and whether the 26.11 Paperless package/module can replace its separate input.
+Take a successful coordinated backup before application or host upgrades and
+test activation before switching the boot generation. Keep
+`system.stateVersion = "26.05"` during the release upgrade.
 
 ## Editing secrets on the Mac
 

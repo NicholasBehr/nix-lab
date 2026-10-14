@@ -53,7 +53,7 @@ findmnt /var/lib/postgresql
 ## Backup and restoration
 
 The nightly maintenance run stops Immich before capturing its PostgreSQL dump
-and keeps its media stable until Borg finishes. Both applications remain
+and keeps its media stable until Borg finishes. Registered applications remain
 stopped through the shared storage work. See [maintenance.md](maintenance.md)
 for timing, recovery and the initial large-library import considerations.
 

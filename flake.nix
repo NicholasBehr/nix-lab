@@ -9,6 +9,10 @@
     # separately so the rest of the host remains on the stable release.
     nixpkgs-immich.url = "github:nixos/nixpkgs/master";
 
+    # Paperless 3.x needs both a newer package and its matching NixOS module.
+    # Keep this exception separate from the stable host package set.
+    nixpkgs-paperless.url = "github:nixos/nixpkgs/nixos-unstable";
+
     # Declarative disk partitioning/formatting
     disko.url = "github:nix-community/disko";
     disko.inputs.nixpkgs.follows = "nixpkgs";
@@ -26,6 +30,7 @@
     self,
     nixpkgs,
     nixpkgs-immich,
+    nixpkgs-paperless,
     disko,
     impermanence,
     sops-nix,
